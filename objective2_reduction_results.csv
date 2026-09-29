@@ -1,5 +1,5 @@
 technique,n_features,accuracy,f1_score,pct_baseline_retained,selected_features
-Baseline_all_features,8,0.9723,0.8088336783988958,100.0,"gender, age, hypertension, heart_disease, smoking_history, bmi, HbA1c_level, blood_glucose_level"
-LDA,1,0.95545,0.6986810957051065,98.26699578319449,N/A (transformed component)
-RFE_n6,6,0.95455,0.6408534176214935,98.17443175974493,"gender, hypertension, heart_disease, smoking_history, bmi, HbA1c_level"
-RFE_n4,4,0.9545,0.6345381526104418,98.16928931399774,"gender, hypertension, heart_disease, HbA1c_level"
+Baseline_all_features,8,0.9844705882352941,0.8951965065502183,100.0,"gender, age, hypertension, heart_disease, smoking_history, bmi, HbA1c_level, blood_glucose_level"
+RFE_n6,6,0.9413823529411764,0.44063991018804377,95.62320745697896,"gender, hypertension, heart_disease, smoking_history, bmi, HbA1c_level"
+RFE_n4,4,0.9410588235294117,0.43197278911564624,95.59034416826003,"gender, hypertension, heart_disease, HbA1c_level"
+LDA,1,0.94,0.46736292428198434,95.48279158699809,N/A (transformed component)

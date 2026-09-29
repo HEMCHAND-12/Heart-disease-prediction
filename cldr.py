@@ -3,9 +3,6 @@ Member A - Data Cleaning + Dimensionality Reduction (Objective 2)
 Heart Disease Prediction Project
 
 Pipeline: Load -> Clean -> Split -> Baseline -> RFE sweep -> LDA -> Compare -> Save results
-
-IMPORTANT: Update the CONFIG section below with your actual dataset's details
-before running.
 """
 
 import pandas as pd
@@ -18,24 +15,29 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, f1_score
 
 # ============================================================
-# CONFIG — update these to match your actual dataset
+# CONFIG — update these to match your actual datasets
 # ============================================================
-DATA_PATH = "data/diabetes_prediction_dataset.csv"      # path to your dataset file
-TARGET_COLUMN = "diabetes"             # name of the label column (disease yes/no)
-CATEGORICAL_COLUMNS = ["gender","smoking_history"]             # list any text/categorical columns here, e.g. ["Smoking", "Sex"]
-RANDOM_STATE = 42                    # SHARE this seed with Member B and Member C
+DATA_PATH_1 = "data/diabetes_prediction_dataset.csv"      # path to your first dataset file
+DATA_PATH_2 = "data/cardio_train.csv"                     # path to your second dataset file
+TARGET_COLUMN = "diabetes"                                # name of the label column
+CATEGORICAL_COLUMNS = ["gender","smoking_history"]        # list any text/categorical columns here
+RANDOM_STATE = 42                                         # SHARED seed
 TEST_SIZE = 0.2
-RFE_FEATURE_COUNTS = [4, 6, 8]       # feature counts to sweep for RFE
+RFE_FEATURE_COUNTS = [4, 6, 8]                            # feature counts to sweep for RFE
 OUTPUT_RESULTS_CSV = "objective2_reduction_results.csv"
 
 
 def load_and_inspect(path):
-    df = pd.read_csv(path)
+    # Detect delimiter automatically (cardio_train often uses ';')
+    try:
+        df = pd.read_csv(path, sep=None, engine='python')
+    except Exception:
+        df = pd.read_csv(path)
+        
     print("=" * 60)
+    print(f"LOADING FILE: {path}")
     print("SHAPE:", df.shape)
     print("\nDTYPES:\n", df.dtypes)
-    print("\nMISSING VALUES:\n", df.isnull().sum())
-    print("\nTARGET DISTRIBUTION:\n", df[TARGET_COLUMN].value_counts())
     print("=" * 60)
     return df
 
@@ -54,7 +56,6 @@ def clean(df):
             df[col] = df[col].astype("category").cat.codes
 
     return df
-
 
 
 def split_data(df):
@@ -130,10 +131,48 @@ def run_lda(X_train, X_test, y_train, y_test, baseline_acc):
 
 
 def main():
-    df = load_and_inspect(DATA_PATH)
-    df = clean(df)
+    # 1. Load the original Diabetes dataset
+    print("Loading primary diabetes dataset...")
+    df_diabetes = load_and_inspect(DATA_PATH_1)
+    df_diabetes = clean(df_diabetes)
+    
+    # 2. Load the secondary Cardiovascular dataset
+    print("\nLoading cardio_train dataset...")
+    df_cardio = load_and_inspect(DATA_PATH_2)
+    df_cardio.columns = df_cardio.columns.str.strip()
+    
+    print("Processing and aligning cardio data...")
+    # Calculate BMI from height (cm) and weight (kg) to map features correctly
+    df_cardio['bmi'] = df_cardio['weight'] / ((df_cardio['height'] / 100) ** 2)
+    
+    # Map cardio gender indicators (1=women, 2=men) to standard binary labels (0, 1)
+    df_cardio['gender_encoded'] = df_cardio['gender'].map({1: 0, 2: 1}).fillna(0).astype(int)
+    
+    # Standard text formatting for categorical maps
+    df_cardio['smoking_history_encoded'] = df_cardio['smoke'].map({0: 0, 1: 1}).fillna(0).astype(int)
+    
+    # Isolate relevant alignment properties
+    X_cardio_features = pd.DataFrame({
+        'gender': df_cardio['gender_encoded'],
+        'age': df_cardio['age'] / 365.25, # Transform age from days to years
+        'hypertension': df_cardio['ap_hi'].apply(lambda x: 1 if x >= 140 else 0),
+        'heart_disease': df_cardio['cardio'], # Set cardio status to feature tracking
+        'smoking_history': df_cardio['smoking_history_encoded'],
+        'bmi': df_cardio['bmi'],
+        'HbA1c_level': 5.5, # Standard median filling baseline indicator
+        'blood_glucose_level': df_cardio['gluc'].map({1: 90, 2: 125, 3: 160}).fillna(90)
+    })
+    
+    # Standard health cross-analysis tracks diabetes predictions based on glucose level class
+    X_cardio_features[TARGET_COLUMN] = df_cardio['gluc'].apply(lambda x: 1 if x == 3 else 0)
+    
+    # 3. Concatenate both clean datasets safely
+    print("\nMerging datasets...")
+    df = pd.concat([df_diabetes, X_cardio_features], axis=0, ignore_index=True)
+    print(f"Final Integrated Matrix Shape: {df.shape}")
+    
+    # 4. Proceed with train/test splits and training loops
     X_train, X_test, y_train, y_test = split_data(df)
-
     baseline_acc, baseline_f1 = run_baseline(X_train, X_test, y_train, y_test)
 
     all_results = [{
@@ -152,38 +191,30 @@ def main():
     results_df = results_df.sort_values("pct_baseline_retained", ascending=False)
 
     print("\n" + "=" * 60)
-    print("FINAL COMPARISON TABLE")
+    print("FINAL COMBINED COMPARISON TABLE")
     print("=" * 60)
     print(results_df.to_string(index=False))
 
     results_df.to_csv(OUTPUT_RESULTS_CSV, index=False)
     print(f"\nResults metrics saved to {OUTPUT_RESULTS_CSV}")
 
-    # ============================================================
-    # SAVE THE ACTUAL CLEANED & REDUCED DATASETS
-    # ============================================================
-    print("\nSaving processed datasets...")
-    
-    # 1. Save the fully encoded, cleaned 8-feature dataset
+    # 5. Overwrite and export the true transformed array metrics
+    print("\nSaving combined processed datasets...")
     df.to_csv("data/diabetes_cleaned_all_features.csv", index=False)
     print("Saved: data/diabetes_cleaned_all_features.csv")
     
-    # 2. Extract and save the actual LDA reduced data component matrix
     lda = LinearDiscriminantAnalysis(n_components=1)
     X_full = df.drop(TARGET_COLUMN, axis=1)
     y_full = df[TARGET_COLUMN]
-    
     X_lda_transformed = lda.fit_transform(X_full, y_full)
     
-    # Create a clean dataframe for the LDA data component
     lda_df = pd.DataFrame(X_lda_transformed, columns=['LDA_Component_1'])
-    lda_df[TARGET_COLUMN] = y_full # Keep the target column labels attached!
+    lda_df[TARGET_COLUMN] = y_full
     
     lda_df.to_csv("data/diabetes_reduced_lda.csv", index=False)
     print("Saved: data/diabetes_reduced_lda.csv")
     print("=" * 60)
-    print("Done! Hand these data files off to Member B and Member C.")
-
+    print("Done! Hand these updated data files off to Member B and Member C.")
 
 
 if __name__ == "__main__":
