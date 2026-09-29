@@ -157,8 +157,33 @@ def main():
     print(results_df.to_string(index=False))
 
     results_df.to_csv(OUTPUT_RESULTS_CSV, index=False)
-    print(f"\nResults saved to {OUTPUT_RESULTS_CSV}")
-    print("Hand this file off to Member C for the stacking ensemble stage.")
+    print(f"\nResults metrics saved to {OUTPUT_RESULTS_CSV}")
+
+    # ============================================================
+    # SAVE THE ACTUAL CLEANED & REDUCED DATASETS
+    # ============================================================
+    print("\nSaving processed datasets...")
+    
+    # 1. Save the fully encoded, cleaned 8-feature dataset
+    df.to_csv("data/diabetes_cleaned_all_features.csv", index=False)
+    print("Saved: data/diabetes_cleaned_all_features.csv")
+    
+    # 2. Extract and save the actual LDA reduced data component matrix
+    lda = LinearDiscriminantAnalysis(n_components=1)
+    X_full = df.drop(TARGET_COLUMN, axis=1)
+    y_full = df[TARGET_COLUMN]
+    
+    X_lda_transformed = lda.fit_transform(X_full, y_full)
+    
+    # Create a clean dataframe for the LDA data component
+    lda_df = pd.DataFrame(X_lda_transformed, columns=['LDA_Component_1'])
+    lda_df[TARGET_COLUMN] = y_full # Keep the target column labels attached!
+    
+    lda_df.to_csv("data/diabetes_reduced_lda.csv", index=False)
+    print("Saved: data/diabetes_reduced_lda.csv")
+    print("=" * 60)
+    print("Done! Hand these data files off to Member B and Member C.")
+
 
 
 if __name__ == "__main__":
