@@ -4,7 +4,7 @@ numpy>=2.1
 scipy>=1.14
 scikit-learn>=1.6
 imbalanced-learn>=0.12
-xgboost>=2.1
+xgboost==2.1.4
 shap>=0.46
 matplotlib>=3.9
 seaborn>=0.13
