@@ -1,0 +1,16 @@
+# Core data and machine-learning stack for the PaRSEL heart-disease project.
+pandas>=2.2
+numpy>=2.1
+scipy>=1.14
+scikit-learn>=1.6
+imbalanced-learn>=0.12
+xgboost>=2.1
+shap>=0.46
+matplotlib>=3.9
+seaborn>=0.13
+jupyterlab>=4.3
+ipykernel>=6.29
+
+# Quality-of-life tools.
+pytest>=8.3
+ruff>=0.8
