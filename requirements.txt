@@ -1,16 +1,17 @@
-# Core data and machine-learning stack for the PaRSEL heart-disease project.
-pandas>=2.2
-numpy>=2.1
-scipy>=1.14
-scikit-learn>=1.6
-imbalanced-learn>=0.12
+# Direct runtime dependencies pinned for the reproduction environment.
+pandas==3.0.6
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+imbalanced-learn==0.14.2
 xgboost==2.1.4
-shap>=0.46
-matplotlib>=3.9
-seaborn>=0.13
-jupyterlab>=4.3
-ipykernel>=6.29
+smote-variants==1.0.1
+matplotlib==3.11.2
+seaborn==0.13.2
+shap==0.52.0
 
-# Quality-of-life tools.
-pytest>=8.3
-ruff>=0.8
+# Development and notebook tools.
+pytest==9.1.1
+ruff==0.16.9
+jupyterlab==4.6.4
+ipykernel==7.3.0
