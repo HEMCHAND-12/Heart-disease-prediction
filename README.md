@@ -26,11 +26,21 @@ source .venv/bin/activate
 
 The paper's reported results are research benchmarks, not clinical advice.
 
+## Reference
+
+Noor, A., Javaid, N., Alrajeh, N., Mansoor, B., Khaqan, A., and Bouk, S. H.
+(2023). "Heart Disease Prediction Using Stacking Model With Balancing
+Techniques and Dimensionality Reduction." *IEEE Access*, 11.
+[DOI: 10.1109/ACCESS.2023.3325681](https://doi.org/10.1109/ACCESS.2023.3325681).
+
+The accompanying [paper PDF](Heart_Disease_Prediction_Using_Stacking_Model_With_Balancing_Techniques_and_Dimensionality_Reduction.pdf)
+is included unchanged under its CC BY-NC-ND 4.0 license.
+
 ## First Baseline
 
 The paper's Table 1 reports 91,500 healthy and 8,500 unhealthy rows, matching
 the `diabetes` label in `data/diabetes_prediction_dataset.csv`. The baseline
-label. Run it from the repository root with:
+uses that label. Run it from the repository root with:
 
 ```bash
 .venv/bin/python scripts/baseline.py
