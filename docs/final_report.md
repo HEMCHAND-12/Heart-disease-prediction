@@ -12,7 +12,7 @@ Several details needed for strict replication are unspecified, including the exa
 
 ### Phase 1: PaRSEL Baseline
 
-The paper-faithful data variant retains all 100,000 rows. Its fixed seed-42 split assigns identical predictor tuples to one partition, preventing repeated records from crossing train/test. This is a deliberate deviation from a simple row-wise stratified split to meet the no-leakage requirement. It contains 79,999 training rows (73,199 negatives, 6,800 positives) and 20,001 original, imbalanced test rows (18,301 negatives, 1,700 positives; 8.50% positive). Random Over Sampling is applied to training data only.
+The paper-faithful data variant retains all 100,000 rows. Its fixed seed-42 split assigns identical predictor tuples to one partition, preventing repeated records from crossing train/test. This is a deliberate deviation from a simple row-wise stratified split to meet the no-leakage requirement. It contains 79,999 training rows (73,199 negatives, 6,800 positives) and 20,001 original, imbalanced test rows (18,301 negatives, 1,700 positives; 8.50% positive). Random Over Sampling is applied to training data only and produces 73,199 examples per class (146,398 total), nine per class below the paper's 73,208 figure.
 
 Two additional variants are reported separately: the 76,916/19,230 exact-deduplicated stratified split and the exact-deduplicated predictor-grouped split. The historical ROS pair is excluded because exact rows crossed its train/test boundary.
 
@@ -28,16 +28,18 @@ PaRSEL+ is a planned extension, not yet an evaluated model. The ordered ablation
 
 The primary held-out run uses the same 20,001 test rows for all Phase 1 configurations. At the default 0.5 decision threshold, the first untuned PaRSEL + ROS + no-reduction run obtained:
 
-| Metric | Paper's rounded claim | Our Phase 1 result | Difference from point reference | Verdict |
-|---|---:|---:|---:|---|
-| Accuracy | about 97% | 95.44% | -1.56 percentage points | Not reproduced |
-| F1 | about 80% | 72.31% | -7.69 percentage points | Not reproduced |
-| Precision | above 90% (often about 99%) | 74.72% | below lower bound | Not reproduced |
-| Recall | about 67-70% | 70.06% | within reported range | Partially reproduced |
-| ROC-AUC | about 98% | 97.80% | -0.20 percentage points | Partially reproduced |
-| PR-AUC | Not clearly reported | 83.93% | n/a | Not comparable |
+| Metric | Paper's rounded claim | Phase 1 baseline | PaRSEL+ | Baseline minus paper | Verdict |
+|---|---:|---:|---:|---:|---|
+| Accuracy | about 97% | 95.44% | pending E1-E8 | -1.56 percentage points | Not reproduced |
+| F1 | about 80% | 72.31% | pending E1-E8 | -7.69 percentage points | Not reproduced |
+| Precision | above 90% (often about 99%) | 74.72% | pending E1-E8 | below lower bound | Not reproduced |
+| Recall | about 67-70% | 70.06% | pending E1-E8 | within reported range | Partially reproduced |
+| ROC-AUC | about 98% | 96.07% | pending E1-E8 | -1.93 percentage points | Not reproduced |
+| PR-AUC | Not clearly reported | 64.70% | pending E1-E8 | n/a | Not comparable |
 
 Specificity was 97.80%; balanced accuracy was 83.93%. The test positive prevalence is 8.50%, so accuracy alone masks the precision/recall trade-off. The paper's confidence and metric inconsistencies prevent a claim of exact reproduction. Remaining prioritized Phase 1 results will be added from the append-only log; the final baseline table must not select a run by test score.
+
+The separate three-draw, training-only randomized-search variant selected learning rate 0.1, depth 7, and 152 estimators. It scored 96.36% accuracy, 84.95% precision, 69.41% recall, 76.40% F1, 0.9713 ROC-AUC, and 0.8458 PR-AUC on the same test set. The paper's Table 4 narrative is for ProWRAS+LDA, whereas this tuned run is ROS/no reduction, so the numbers are not configuration-comparable. The untuned paper-parameter result remains the prespecified primary comparator.
 
 ## Proposed Improvements
 

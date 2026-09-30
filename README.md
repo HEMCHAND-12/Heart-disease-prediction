@@ -131,9 +131,17 @@ This is a separate baseline and is not a PaRSEL reproduction result.
 
 ## Results Summary
 
-Current Phase 1 results and unsupported runs are summarized in
-`results/comparison_to_paper.md`. The Phase 1 primary PaRSEL stack has a first
-successful run on record; the baseline comparison is still in progress until
-all prioritized variant runs finish. PaRSEL+ results belong in
-`results/extension_results.csv` and `docs/final_report.md`, not in the Phase 1
-baseline table. Results are reported without test-set tuning or cherry-picking.
+At the current checkpoint, nine Phase 1 runs have completed on the primary
+paper-faithful variant. The untuned PaRSEL + ROS + no-reduction result is 95.44%
+accuracy, 74.72% precision, 70.06% recall, 72.31% F1, 97.80% specificity,
+83.93% balanced accuracy, 0.9607 ROC-AUC, and 0.6470 PR-AUC. The tuned ROS/no-
+reduction run is separate and is not configuration-comparable to the paper's
+ProWRAS+LDA tuned result. ROS+RFE and ROS+LDA are also checkpointed; the RFE row
+still needs its chosen feature metadata recorded and rerun before relying on
+that ablation.
+
+Phase 1 is paused after the ROS+LDA priority. SMOTE/ADASYN priorities and the
+deduplicated/grouped robustness runs remain pending. Current comparisons are in
+`results/comparison_to_paper.md`; PaRSEL+ has not been evaluated yet. Continue
+with `make reproduce`; existing completed run keys are skipped, and results are
+not tuned or cherry-picked against the test set.

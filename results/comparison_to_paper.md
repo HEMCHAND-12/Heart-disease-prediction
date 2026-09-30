@@ -1,18 +1,29 @@
 # Paper vs. Reproduction Results
 
-Primary comparison is fixed in advance as the stratified seed-42 split, ROS, no dimensionality reduction, PaRSEL. It is not selected by test performance. Values in the paper column are rounded claims from its discussion; several result tables are embedded as raster figures, so cell-level values cannot be reliably extracted from the supplied PDF.
+Primary comparison is fixed in advance as the no-dedup, seed-42, predictor-group-isolated split, ROS, no dimensionality reduction, PaRSEL with paper parameters. This retains all source rows while preventing identical predictor tuples from crossing train/test; the paper does not specify a grouped split, so this is a leakage-safe faithful-data variant, not an exact split reproduction. Values in the paper column are rounded claims from its discussion; several result tables are embedded as raster figures, so cell-level values cannot be reliably extracted from the supplied PDF.
 
-Current status: five standalone ROS/no-reduction models completed before the PaRSEL run was cancelled. PaRSEL, tuning, the grouped model run, the remaining sampler/reducer grid, PaRSEL ROC/PR curves, and SHAP analysis are not complete. These results are partial and are not a completed paper reproduction.
+Current status is calculated from append-only `all_runs.csv`. Historical standalone rows from the earlier runner are excluded from the paper-faithful PaRSEL verdict. Specialized samplers that fail to import are explicitly recorded as unavailable rather than replaced.
 
 ## Headline Claims
 
 | Metric | Paper | Ours (primary ROS/no reduction) | Delta | Verdict |
 |---|---:|---:|---:|---|
-| Accuracy | about 97% | not run | n/a | not run |
-| F1 | about 80% | not run | n/a | not run |
-| Precision | >90% (often about 99%) | not run | n/a | not run |
-| Recall | 67-70% (one passage says 77% for SMOTE) | not run | n/a | not run |
-| ROC-AUC | about 98% | not run | n/a | not run |
+| Accuracy | about 97% | 0.9544 | -0.0156 | partially / not reproduced |
+| F1 | about 80% | 0.7231 | -0.0769 | partially / not reproduced |
+| Precision | >90% (often about 99%) | 0.7472 | -0.1528 | not reproduced |
+| Recall | 67-70% (one passage says 77% for SMOTE) | 0.7006 | +0.0156 | partially / not reproduced |
+| ROC-AUC | about 98% | 0.9607 | -0.0193 | partially / not reproduced |
+
+## Tuned PaRSEL vs. Paper Table 4 Claim
+
+Our tuned variant uses ROS with no reduction; the paper's tuned narrative is for ProWRAS+LDA. Values are shown for context, but this is not a configuration-matched comparison.
+
+| Metric | Paper narrative | Our train-only tuned variant | Difference | Verdict |
+|---|---:|---:|---:|---|
+| Accuracy | 98% | 0.9636 | -0.0164 | not comparable |
+| F1 | 95% | 0.7640 | -0.1860 | not comparable |
+| Precision | 94% | 0.8495 | -0.0905 | not comparable |
+| Recall | 97% | 0.6941 | -0.2759 | not comparable |
 
 ## Completed Standalone Reference Runs
 
@@ -20,11 +31,11 @@ These are individual classifiers on the same fixed ROS/no-reduction training and
 
 | Model | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC | Fit seconds | Predict seconds |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| PAC | 0.8728 | 0.4005 | 0.8903 | 0.5525 | 0.9581 | 0.8016 | 0.50 | 0.005 |
-| Ridge | 0.8790 | 0.4127 | 0.8791 | 0.5617 | 0.9574 | 0.7984 | 1.21 | 0.001 |
-| SGD | 0.7506 | 0.2526 | 0.9334 | 0.3976 | 0.9372 | 0.7024 | 0.30 | 0.002 |
-| XGBoost | 0.8951 | 0.4533 | 0.9204 | 0.6074 | 0.9763 | 0.8798 | 0.47 | 0.028 |
-| LogitBoost_surrogate | 0.9236 | 0.5421 | 0.8614 | 0.6655 | 0.9748 | 0.8733 | 106.20 | 0.370 |
+| PAC | 0.8803 | 0.4060 | 0.8824 | 0.5561 | 0.9563 | 0.7885 | 0.60 | 0.004 |
+| Ridge | 0.8840 | 0.4135 | 0.8735 | 0.5613 | 0.9564 | 0.7872 | 1.21 | 0.001 |
+| SGD | 0.8522 | 0.3529 | 0.8871 | 0.5049 | 0.9415 | 0.6378 | 0.28 | 0.001 |
+| XGBoost | 0.9075 | 0.4766 | 0.9041 | 0.6242 | 0.9743 | 0.8734 | 0.62 | 0.038 |
+| LogitBoost_surrogate | 0.9309 | 0.5610 | 0.8576 | 0.6783 | 0.9746 | 0.8686 | 136.00 | 0.380 |
 
 ## Balancing Comparisons
 
@@ -34,7 +45,9 @@ The paper's discussion gives rounded PaRSEL results after reduction for these sa
 |---|---|---|---|---|
 | ProWRAS | 98% / 95% / 94% / 97% | n/a | not run | not run |
 | LoRAS | 97% / 80% / 99% / 67% | n/a | not run | not run |
-| ROS | 97% / 80% / 99% / 67% | n/a | not run | not run |
+| ROS | 97% / 80% / 99% / 67% | none | 95.4% / 72.3% / 74.7% / 70.1% | not reproduced |
+| ROS | 97% / 80% / 99% / 67% | RFE | 95.4% / 72.3% / 74.7% / 70.1% | not reproduced |
+| ROS | 97% / 80% / 99% / 67% | LDA | 90.2% / 49.2% / 43.8% / 56.0% | not reproduced |
 | ADASYN | 97% / 81% / 99% / 67% | n/a | not run | not run |
 | SMOTE | 97% / 80% / 99% / 77% | n/a | not run | not run |
 | Borderline-SMOTE | 97% / 80% / 99% / 68% | n/a | not run | not run |
@@ -51,14 +64,14 @@ The narrative allows approximate sampler-level PaRSEL comparisons above. The ind
 
 ## Threats to Validity and Deviations
 
-- The raw diabetes file contains 3,854 exact duplicate rows. Exact duplicates are removed before the fixed split to enforce zero exact-row overlap. This differs from the paper, which does not document duplicate handling, and changes the class ratio slightly.
-- The stratified holdout remains imbalanced; accuracy can look strong while missing minority cases. Recall, precision, PR-AUC, specificity, and the confusion matrix must be read together.
-- Predictor combinations can repeat with conflicting labels. The grouped split keeps identical predictor tuples together and is reported separately as a stricter robustness test.
+- The raw diabetes file contains 3,854 exact duplicate rows. The paper-faithful variant keeps all source rows but groups identical predictor tuples into one partition to prevent train/test duplication; deduplication is reported as a separate robustness variant.
+- The holdouts remain about 91/9 imbalanced; accuracy can look strong while missing minority cases. Recall, precision, PR-AUC, specificity, balanced accuracy, and the confusion matrix must be read together.
+- Predictor combinations can repeat with conflicting labels. Grouped variants keep identical predictor tuples together, so their metrics may be more conservative than an ordinary row-wise split.
 - The paper says split before balancing, but does not specify seed or split ratio. Seed 42 and 80/20 are reproducibility choices, not verified author settings.
 - The paper reports recall as both 67% and 70%; its Table 4/tuned result is described as roughly 98% accuracy and 97% recall, while other reported recall values are lower. These claims are internally inconsistent.
 - The paper claims reduced execution time but does not provide a sufficiently detailed, hardware-matched timing protocol. Our times are local and include model fitting and sampling, but are not directly comparable across machines.
 - `GradientBoostingClassifier(loss='log_loss')` is a documented LogitBoost-style substitute, not a canonical LogitBoost implementation. It is not labeled as exact reproduction.
-- `smote-variants==1.0.1` installation was cancelled. ProWRAS, LoRAS, MWMOTE, and RWOS are therefore recorded as unavailable, not approximated. They must be run after that dependency is installed and the matching implementation names are verified.
+- `smote-variants==1.0.1` installed as a no-deps wheel in an isolated venv, but import validation failed because `metric-learn` is absent. Per the one-attempt rule no retry or main-environment install was made; ProWRAS, LoRAS, MWMOTE, and RWOS are unavailable, not approximated.
 - Outliers are capped at training-fitted 1.5-IQR bounds because the paper's outlier-removal rule is unspecified. Test rows are not dropped.
 - SHAP summary, waterfall, and dependence plots are deferred until the PaRSEL and comparison runs finish; no explanation is attributed to an uncompleted stack.
 
