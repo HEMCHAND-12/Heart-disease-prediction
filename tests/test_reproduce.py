@@ -2,10 +2,12 @@ import pandas as pd
 
 from scripts.reproduce import (
     FEATURES,
+    NUMERIC,
     TARGET,
     TrainWinsorizer,
     group_ids,
     prepare_splits,
+    transform_pair,
 )
 
 
@@ -73,6 +75,29 @@ def test_winsorizer_bounds_are_learned_from_train_only() -> None:
     upper_bound = fitted.bounds_["age"][1]
     assert fitted.transform(test)["age"].iloc[0] == upper_bound
     assert fitted.bounds_["age"][1] < test["age"].iloc[0]
+
+
+def test_test_rows_cannot_change_training_preprocessing() -> None:
+    from scripts.reproduce import CATEGORICAL
+
+    train = pd.DataFrame({
+        "gender": ["Female", "Male"] * 10,
+        "smoking_history": ["never", "former"] * 10,
+        "age": [30.0, 60.0] * 10,
+        "hypertension": [0, 1] * 10,
+        "heart_disease": [0, 1] * 10,
+        "bmi": [22.0, 34.0] * 10,
+        "HbA1c_level": [5.2, 7.0] * 10,
+        "blood_glucose_level": [90, 180] * 10,
+        "diabetes": [0, 1] * 10,
+    })
+    test = train.iloc[:4].copy()
+    changed_test = test.copy()
+    changed_test.loc[:, CATEGORICAL[0]] = "unseen-category"
+    changed_test.loc[:, NUMERIC[0]] = 1_000_000
+    original_train, _, _ = transform_pair(train, test, "none")
+    changed_train, _, _ = transform_pair(train, changed_test, "none")
+    assert (original_train == changed_train).all()
 
 
 def test_split_builder_records_binary_classes() -> None:

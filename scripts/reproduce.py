@@ -93,7 +93,7 @@ def now_utc() -> str:
 
 @contextmanager
 def experiment_timeout(seconds: int = 600):
-    def timeout_handler(signum: int, frame: Any) -> None:
+    def timeout_handler(*_: Any) -> None:
         raise TimeoutError(f"experiment exceeded {seconds} seconds")
 
     previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
@@ -342,9 +342,10 @@ def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampl
     best_params: dict[str, Any] = {}
     meta_start = time.perf_counter()
     if tune:
-        search = RandomizedSearchCV(GradientBoostingClassifier(loss="log_loss", random_state=SEED), {
+        meta_search_base = make_model("LogitBoost_surrogate")
+        search = RandomizedSearchCV(meta_search_base, {
             "learning_rate": [0.1, 0.01, 0.001], "n_estimators": randint(50, 200), "max_depth": randint(3, 10),
-        }, n_iter=12, scoring="average_precision", cv=StratifiedKFold(3, shuffle=True, random_state=SEED), random_state=SEED, n_jobs=1)
+        }, n_iter=3, scoring="average_precision", cv=StratifiedKFold(3, shuffle=True, random_state=SEED), random_state=SEED, n_jobs=1)
         search.fit(oof, y); meta = search.best_estimator_; best_params = search.best_params_
     else:
         meta.fit(oof, y)
@@ -424,7 +425,7 @@ def completed_run_keys() -> set[str]:
         return {row["run_key"] for row in csv.DictReader(stream) if row.get("run_key")}
 
 
-def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset_variant: str, sampler: str, reducer: str, models: list[str], tune: bool = False) -> None:
+def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset_variant: str, sampler: str, reducer: str, models: list[str]) -> None:
     base = {"timestamp_utc": now_utc(), "phase": "phase1_baseline", "dataset_variant": dataset_variant, "split": split, "balancer": sampler, "sampler": sampler, "reducer": reducer, "seed": SEED, "train_rows": len(train), "test_rows": len(test)}
     finished = completed_run_keys()
     try:
