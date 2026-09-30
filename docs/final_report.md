@@ -85,7 +85,45 @@ PaRSEL+ will only be described as an improvement if it outperforms the prespecif
 
 ## Statistical Significance
 
-**Pending E1.** Planned analysis uses repeated stratified cross-validation within development data over five fixed seeds, reporting mean, standard deviation, and 95% confidence intervals. The untouched test set is reserved for one final paired comparison. McNemar's test will compare paired classifications; DeLong's test will compare paired ROC-AUC. No improvement claim is made before those results exist.
+### E1 Cross-Validated Evaluation
+
+E1 is complete. It used five-fold stratified CV over five fixed seeds for the
+standalone models and three fixed seeds for PaRSEL because its nested OOF stack
+is substantially more expensive. The reported means are first averaged within
+each seed, then summarized across seeds; the intervals are 95% t-based CIs. The
+held-out test set was not used for CV fitting or model selection and was used
+separately for the paired McNemar and DeLong tests.
+
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC |
+|---|---|---|---|---|---|---|
+| PaRSEL | 0.9672 +/- 0.0008 [0.9652, 0.9693] | 0.8935 +/- 0.0067 [0.8768, 0.9103] | 0.6981 +/- 0.0041 [0.6881, 0.7082] | 0.7836 +/- 0.0052 [0.7707, 0.7965] | 0.9741 +/- 0.0004 [0.9730, 0.9752] | 0.8480 +/- 0.0012 [0.8450, 0.8509] |
+| PAC | 0.8774 +/- 0.0004 [0.8769, 0.8779] | 0.4010 +/- 0.0008 [0.4000, 0.4020] | 0.8949 +/- 0.0009 [0.8937, 0.8960] | 0.5538 +/- 0.0007 [0.5529, 0.5547] | 0.9611 +/- 0.0001 [0.9610, 0.9611] | 0.8038 +/- 0.0001 [0.8037, 0.8040] |
+| Ridge | 0.8829 +/- 0.0003 [0.8825, 0.8832] | 0.4122 +/- 0.0006 [0.4115, 0.4129] | 0.8867 +/- 0.0008 [0.8858, 0.8877] | 0.5628 +/- 0.0005 [0.5621, 0.5635] | 0.9611 +/- 0.0000 [0.9611, 0.9612] | 0.8039 +/- 0.0001 [0.8038, 0.8041] |
+| SGD | 0.8495 +/- 0.0370 [0.8036, 0.8955] | 0.3892 +/- 0.0789 [0.2913, 0.4871] | 0.8569 +/- 0.0739 [0.7651, 0.9486] | 0.5147 +/- 0.0482 [0.4548, 0.5746] | 0.9479 +/- 0.0066 [0.9398, 0.9560] | 0.7438 +/- 0.0185 [0.7208, 0.7668] |
+| XGBoost | 0.9082 +/- 0.0009 [0.9071, 0.9094] | 0.4794 +/- 0.0027 [0.4761, 0.4828] | 0.9203 +/- 0.0006 [0.9196, 0.9211] | 0.6304 +/- 0.0024 [0.6274, 0.6334] | 0.9784 +/- 0.0001 [0.9783, 0.9785] | 0.8850 +/- 0.0003 [0.8846, 0.8853] |
+| Logistic regression | 0.8851 +/- 0.0004 [0.8846, 0.8857] | 0.4171 +/- 0.0009 [0.4160, 0.4183] | 0.8834 +/- 0.0009 [0.8822, 0.8845] | 0.5667 +/- 0.0007 [0.5658, 0.5676] | 0.9619 +/- 0.0001 [0.9618, 0.9620] | 0.8113 +/- 0.0001 [0.8111, 0.8114] |
+
+Held-out paired comparisons against PaRSEL:
+
+| Alternative | McNemar p | DeLong p | Verdict |
+|---|---:|---:|---|
+| PAC | 1.27e-200 | 0.00666 | Mixed: PaRSEL has better accuracy/F1/ranking, PAC has higher recall; no universal improvement claim |
+| Ridge | 6.31e-188 | 0.00864 | Mixed: PaRSEL has better accuracy/F1/ranking, Ridge has higher recall; no universal improvement claim |
+| SGD | 5.27e-321 | 2.42e-27 | Mixed: PaRSEL has better accuracy/F1/ranking, SGD has higher recall; no universal improvement claim |
+| XGBoost | 1.44e-99 | 3.03e-44 | Mixed: PaRSEL has better accuracy/F1/PR-AUC, XGBoost has higher recall and ROC-AUC; no universal improvement claim |
+| Logistic regression | 9.49e-181 | 0.02598 | Mixed: PaRSEL has better accuracy/F1/PR-AUC, logistic regression has higher recall; no universal improvement claim |
+
+All paired p-values are below 0.05, so these differences are statistically
+detectable on the held-out set, but significance does not decide which clinical
+operating point is preferable. PaRSEL+ is therefore not claimed to improve all
+metrics; the principal trade-off is stronger precision/F1/ranking versus lower
+recall than the standalone screening-oriented models.
+
+## E1 Verification
+
+The append-only E1 file contains 194 rows: one runtime-plan row, 140 CV-fold
+rows, 48 metric summaries, and five paired held-out rows. There are no duplicate
+run keys and all executable rows completed successfully.
 
 ## Limitations
 
