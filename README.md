@@ -50,8 +50,10 @@ Generate the balanced training set and untouched test split with:
 .venv/bin/python scripts/balance_dataset.py
 ```
 
-The script applies the paper's Random Over Sampling (ROS) method after an
-80/20 split (`random_state=42`). It writes 146,416 training rows with 73,208
+The paper specifies splitting before balancing but does not report the split
+ratio or seed. The script uses an 80/20 split (`random_state=42`), which
+reproduces the paper's 73,208 majority-class training rows, then applies its
+Random Over Sampling (ROS) method. It writes 146,416 training rows with 73,208
 examples per class to `data/diabetes_prediction_dataset_balanced_train.csv`,
 and preserves the original class distribution in
 `data/diabetes_prediction_dataset_test.csv`. The original source CSV remains
