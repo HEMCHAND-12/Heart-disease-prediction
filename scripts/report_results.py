@@ -41,7 +41,11 @@ def verdict(value: float | None, target: float, claim_type: str = "approx", tole
 
 
 def metric_charts(runs: pd.DataFrame) -> None:
-    successful_ros = runs.loc[(runs.status == "ok") & (runs.split == "stratified") & (runs.sampler == "ROS")]
+    successful_ros = runs.loc[
+        (runs.status == "ok")
+        & (runs.dataset_variant == "paper_faithful")
+        & (runs.sampler == "ROS")
+    ]
     if successful_ros.empty:
         return
     for metric in ("accuracy", "precision", "recall", "f1"):
@@ -57,7 +61,7 @@ def metric_charts(runs: pd.DataFrame) -> None:
 def curve_charts(runs: pd.DataFrame) -> None:
     primary = runs.loc[
         (runs.status == "ok")
-        & (runs.split == "stratified")
+        & (runs.dataset_variant == "paper_faithful")
         & (runs.sampler == "ROS")
         & (runs.reducer == "none")
         & (runs.model == "PaRSEL")
@@ -87,10 +91,11 @@ def curve_charts(runs: pd.DataFrame) -> None:
 def comparison_report(runs: pd.DataFrame) -> None:
     successful = runs.loc[runs.status == "ok"]
     primary = successful.loc[
-        (successful.split == "stratified")
+        (successful.dataset_variant == "paper_faithful")
         & (successful.sampler == "ROS")
         & (successful.reducer == "none")
         & (successful.model == "PaRSEL")
+        & (successful.model_variant == "paper_parameters")
     ]
     result = primary.iloc[-1] if not primary.empty else None
     paper_claims = [
@@ -103,9 +108,9 @@ def comparison_report(runs: pd.DataFrame) -> None:
     lines = [
         "# Paper vs. Reproduction Results",
         "",
-        "Primary comparison is fixed in advance as the stratified seed-42 split, ROS, no dimensionality reduction, PaRSEL. It is not selected by test performance. Values in the paper column are rounded claims from its discussion; several result tables are embedded as raster figures, so cell-level values cannot be reliably extracted from the supplied PDF.",
+        "Primary comparison is fixed in advance as the no-dedup, seed-42, predictor-group-isolated split, ROS, no dimensionality reduction, PaRSEL with paper parameters. This retains all source rows while preventing identical predictor tuples from crossing train/test; the paper does not specify a grouped split, so this is a leakage-safe faithful-data variant, not an exact split reproduction. Values in the paper column are rounded claims from its discussion; several result tables are embedded as raster figures, so cell-level values cannot be reliably extracted from the supplied PDF.",
         "",
-        "Current status: five standalone ROS/no-reduction models completed before the PaRSEL run was cancelled. PaRSEL, tuning, the grouped model run, the remaining sampler/reducer grid, PaRSEL ROC/PR curves, and SHAP analysis are not complete. These results are partial and are not a completed paper reproduction.",
+            "Current status is calculated from append-only `all_runs.csv`. Historical standalone rows from the earlier runner are excluded from the paper-faithful PaRSEL verdict. Specialized samplers that fail to import are explicitly recorded as unavailable rather than replaced.",
         "",
         "## Headline Claims",
         "",
@@ -127,10 +132,11 @@ def comparison_report(runs: pd.DataFrame) -> None:
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     standalone = successful.loc[
-        (successful.split == "stratified")
+        (successful.dataset_variant == "paper_faithful")
         & (successful.sampler == "ROS")
         & (successful.reducer == "none")
         & (successful.model != "PaRSEL")
+        & (successful.phase == "phase1_baseline")
     ]
     if standalone.empty:
         lines.append("| No completed standalone rows | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
@@ -148,9 +154,10 @@ def comparison_report(runs: pd.DataFrame) -> None:
     ]
     for sampler, (acc, f1, precision, recall) in PAPER_VALUES.items():
         ours_rows = successful.loc[
-            (successful.split == "stratified")
+            (successful.dataset_variant == "paper_faithful")
             & (successful.sampler == sampler)
             & (successful.model == "PaRSEL")
+            & (successful.model_variant == "paper_parameters")
         ]
         if ours_rows.empty:
             lines.append(f"| {sampler} | {acc:.0%} / {f1:.0%} / {precision:.0%} / {recall:.0%} | n/a | not run | not run |")
@@ -166,10 +173,11 @@ def comparison_report(runs: pd.DataFrame) -> None:
         "",
     ]
     grouped = successful.loc[
-        (successful.split == "grouped")
+        (successful.dataset_variant == "predictor_grouped")
         & (successful.sampler == "ROS")
         & (successful.reducer == "none")
         & (successful.model == "PaRSEL")
+        & (successful.model_variant == "paper_parameters")
     ]
     if grouped.empty or result is None:
         lines.append("Grouped-split PaRSEL result is not available yet. Run `make robustness` after the main run.")
@@ -184,14 +192,14 @@ def comparison_report(runs: pd.DataFrame) -> None:
         "",
         "## Threats to Validity and Deviations",
         "",
-        "- The raw diabetes file contains 3,854 exact duplicate rows. Exact duplicates are removed before the fixed split to enforce zero exact-row overlap. This differs from the paper, which does not document duplicate handling, and changes the class ratio slightly.",
-        "- The stratified holdout remains imbalanced; accuracy can look strong while missing minority cases. Recall, precision, PR-AUC, specificity, and the confusion matrix must be read together.",
-        "- Predictor combinations can repeat with conflicting labels. The grouped split keeps identical predictor tuples together and is reported separately as a stricter robustness test.",
+        "- The raw diabetes file contains 3,854 exact duplicate rows. The paper-faithful variant keeps all source rows but groups identical predictor tuples into one partition to prevent train/test duplication; deduplication is reported as a separate robustness variant.",
+        "- The holdouts remain about 91/9 imbalanced; accuracy can look strong while missing minority cases. Recall, precision, PR-AUC, specificity, balanced accuracy, and the confusion matrix must be read together.",
+        "- Predictor combinations can repeat with conflicting labels. Grouped variants keep identical predictor tuples together, so their metrics may be more conservative than an ordinary row-wise split.",
         "- The paper says split before balancing, but does not specify seed or split ratio. Seed 42 and 80/20 are reproducibility choices, not verified author settings.",
         "- The paper reports recall as both 67% and 70%; its Table 4/tuned result is described as roughly 98% accuracy and 97% recall, while other reported recall values are lower. These claims are internally inconsistent.",
         "- The paper claims reduced execution time but does not provide a sufficiently detailed, hardware-matched timing protocol. Our times are local and include model fitting and sampling, but are not directly comparable across machines.",
         "- `GradientBoostingClassifier(loss='log_loss')` is a documented LogitBoost-style substitute, not a canonical LogitBoost implementation. It is not labeled as exact reproduction.",
-        "- `smote-variants==1.0.1` installation was cancelled. ProWRAS, LoRAS, MWMOTE, and RWOS are therefore recorded as unavailable, not approximated. They must be run after that dependency is installed and the matching implementation names are verified.",
+        "- `smote-variants==1.0.1` installed as a no-deps wheel in an isolated venv, but import validation failed because `metric-learn` is absent. Per the one-attempt rule no retry or main-environment install was made; ProWRAS, LoRAS, MWMOTE, and RWOS are unavailable, not approximated.",
         "- Outliers are capped at training-fitted 1.5-IQR bounds because the paper's outlier-removal rule is unspecified. Test rows are not dropped.",
         "- SHAP summary, waterfall, and dependence plots are deferred until the PaRSEL and comparison runs finish; no explanation is attributed to an uncompleted stack.",
         "",

@@ -27,6 +27,18 @@ def test_grouped_split_has_no_shared_predictor_tuples() -> None:
     assert not set(map(tuple, train[FEATURES].to_numpy())) & set(map(tuple, test[FEATURES].to_numpy()))
 
 
+def test_paper_faithful_variant_retains_duplicates_without_group_leakage() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    train = pd.read_csv(root / "splits" / "paper_faithful_train.csv")
+    test = pd.read_csv(root / "splits" / "paper_faithful_test.csv")
+    assert len(train) + len(test) == 100_000
+    assert train.duplicated().sum() + test.duplicated().sum() > 0
+    assert not set(map(tuple, train[FEATURES].to_numpy())) & set(map(tuple, test[FEATURES].to_numpy()))
+    assert test[TARGET].value_counts().to_dict() == {0: 18_301, 1: 1_700}
+
+
 def test_group_ids_keep_equal_predictors_together() -> None:
     frame = pd.DataFrame(
         {

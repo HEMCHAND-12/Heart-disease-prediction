@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-09-30T10:04:25+00:00",
+  "created_utc": "2026-09-30T10:34:15+00:00",
   "seed": 42,
   "target": "diabetes",
   "features": [
@@ -52,42 +52,43 @@
   },
   "paper_parameters": {
     "PAC": {
-      "C": 1.6063676e-05,
+      "C": 1.6063676259174505e-05,
       "max_iter": 2000,
       "random_state": 30
     },
     "Ridge": {
       "alpha": 7.3,
-      "solver": "saga"
+      "solver": "saga",
+      "random_state": 42
     },
     "SGD": {
       "alpha": 0.000745,
       "loss": "perceptron",
       "penalty": "l2",
       "max_iter": 3000,
-      "random_state": 30
+      "random_state": 42
     },
     "XGBoost": {
-      "learning_rate": 0.0582,
+      "learning_rate": 0.05820509320520235,
       "n_estimators": 57,
       "max_depth": 7,
-      "subsample": 0.534,
-      "colsample_bytree": 0.731,
-      "random_state": 30,
+      "subsample": 0.5343885211152184,
+      "colsample_bytree": 0.730893825622149,
+      "random_state": 42,
       "n_jobs": 4,
       "tree_method": "hist",
       "eval_metric": "logloss"
     },
     "LogitBoost_surrogate": {
-      "learning_rate": 0.132,
+      "learning_rate": 0.1323705789444759,
       "n_estimators": 400,
       "max_leaf_nodes": 127,
       "min_samples_leaf": 4,
       "max_depth": 5,
-      "random_state": 30
+      "random_state": 42
     }
   },
-  "meta_model_deviation": "GradientBoostingClassifier(loss='log_loss') used as a documented LogitBoost-style surrogate, not canonical LogitBoost.",
+  "meta_model_deviation": "GradientBoostingClassifier(loss='log_loss') used as additive logistic boosting surrogate; not canonical LogitBoost.",
   "python_version": "3.14.4",
   "versions": {
     "numpy": "2.5.3",
@@ -99,5 +100,71 @@
     "matplotlib": "3.11.2",
     "shap": "0.52.0"
   },
-  "specialized_sampler_status": {}
+  "specialized_sampler_status": {},
+  "sampler_install_attempt": {
+    "package": "smote-variants==1.0.1",
+    "environment": ".venv/sampler-install",
+    "wheel_install": "completed with --no-deps",
+    "import_validation": "failed: metric_learn is absent; no retry or main-environment install performed",
+    "available_methods": []
+  },
+  "dataset_variants": {
+    "paper_faithful": {
+      "deduplicated": false,
+      "split_rule": "first StratifiedGroupKFold(5) fold grouped by identical predictor tuples; all 100k source rows retained",
+      "train_rows": 79999,
+      "test_rows": 20001,
+      "train_counts": {
+        "0": 73199,
+        "1": 6800
+      },
+      "test_counts": {
+        "0": 18301,
+        "1": 1700
+      },
+      "test_prevalence": 0.08499575021248938,
+      "files": {
+        "train": "splits/paper_faithful_train.csv",
+        "test": "splits/paper_faithful_test.csv"
+      }
+    },
+    "deduplicated": {
+      "deduplicated": true,
+      "split_rule": "stratified 80/20 row split after exact duplicate removal",
+      "train_rows": 76916,
+      "test_rows": 19230,
+      "train_counts": {
+        "0": 70130,
+        "1": 6786
+      },
+      "test_counts": {
+        "0": 17534,
+        "1": 1696
+      },
+      "test_prevalence": 0.08819552782111284,
+      "files": {
+        "train": "splits/stratified_train.csv",
+        "test": "splits/stratified_test.csv"
+      }
+    },
+    "predictor_grouped": {
+      "deduplicated": true,
+      "split_rule": "first StratifiedGroupKFold(5) fold grouped by identical predictors",
+      "train_rows": 76917,
+      "test_rows": 19229,
+      "train_counts": {
+        "0": 70131,
+        "1": 6786
+      },
+      "test_counts": {
+        "0": 17533,
+        "1": 1696
+      },
+      "test_prevalence": 0.08820011441052576,
+      "files": {
+        "train": "splits/grouped_train.csv",
+        "test": "splits/grouped_test.csv"
+      }
+    }
+  }
 }

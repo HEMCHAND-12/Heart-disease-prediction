@@ -3,16 +3,17 @@ PYTHON ?= .venv/bin/python
 .PHONY: reproduce reproduce-priority robustness report test
 
 reproduce:
-	$(PYTHON) scripts/reproduce.py --force-splits --split stratified --include-tuned
-	$(PYTHON) scripts/reproduce.py --split grouped --priority-only
-	$(PYTHON) scripts/report_results.py
+	mkdir -p results
+	nohup $(PYTHON) scripts/reproduce.py --force-splits --phase1-priority --split both --include-tuned >> results/phase1.log 2>&1 & echo $$! > results/phase1.pid
 
 reproduce-priority:
-	$(PYTHON) scripts/reproduce.py --force-splits --priority-only --include-tuned
+	mkdir -p results
+	nohup $(PYTHON) scripts/reproduce.py --force-splits --phase1-priority --split paper_faithful --include-tuned >> results/phase1.log 2>&1 & echo $$! > results/phase1.pid
 	$(PYTHON) scripts/report_results.py
 
 robustness:
-	$(PYTHON) scripts/reproduce.py --split grouped --priority-only
+	mkdir -p results
+	nohup $(PYTHON) scripts/reproduce.py --phase1-priority --split predictor_grouped >> results/robustness.log 2>&1 & echo $$! > results/robustness.pid
 	$(PYTHON) scripts/report_results.py
 
 report:

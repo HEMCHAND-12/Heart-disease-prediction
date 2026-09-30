@@ -7,8 +7,10 @@ import csv
 import importlib
 import json
 import platform
+import signal
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
@@ -17,6 +19,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE, RandomOverSampler
+from scipy.stats import randint
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import FactorAnalysis
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -27,6 +30,7 @@ from sklearn.linear_model import PassiveAggressiveClassifier, RidgeClassifier, S
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
+    balanced_accuracy_score,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -54,13 +58,14 @@ NUMERIC = ["age", "hypertension", "heart_disease", "bmi", "HbA1c_level", "blood_
 CONTINUOUS = ["age", "bmi", "HbA1c_level", "blood_glucose_level"]
 FEATURES = [*CATEGORICAL, *NUMERIC]
 SPLIT_PATHS = {name: SPLITS / f"{name}.csv" for name in ("stratified_train", "stratified_test", "grouped_train", "grouped_test")}
+PAPER_PATHS = {name: SPLITS / f"paper_faithful_{name}.csv" for name in ("train", "test")}
 
 PAPER_PARAMS: dict[str, dict[str, Any]] = {
-    "PAC": {"C": 1.6063676e-05, "max_iter": 2000, "random_state": 30},
-    "Ridge": {"alpha": 7.3, "solver": "saga"},
-    "SGD": {"alpha": 0.000745, "loss": "perceptron", "penalty": "l2", "max_iter": 3000, "random_state": 30},
-    "XGBoost": {"learning_rate": 0.0582, "n_estimators": 57, "max_depth": 7, "subsample": 0.534, "colsample_bytree": 0.731, "random_state": 30, "n_jobs": 4, "tree_method": "hist", "eval_metric": "logloss"},
-    "LogitBoost_surrogate": {"learning_rate": 0.132, "n_estimators": 400, "max_leaf_nodes": 127, "min_samples_leaf": 4, "max_depth": 5, "random_state": 30},
+    "PAC": {"C": 1.6063676259174505e-05, "max_iter": 2000, "random_state": 30},
+    "Ridge": {"alpha": 7.3, "solver": "saga", "random_state": SEED},
+    "SGD": {"alpha": 0.000745, "loss": "perceptron", "penalty": "l2", "max_iter": 3000, "random_state": SEED},
+    "XGBoost": {"learning_rate": 0.05820509320520235, "n_estimators": 57, "max_depth": 7, "subsample": 0.5343885211152184, "colsample_bytree": 0.730893825622149, "random_state": SEED, "n_jobs": 4, "tree_method": "hist", "eval_metric": "logloss"},
+    "LogitBoost_surrogate": {"learning_rate": 0.1323705789444759, "n_estimators": 400, "max_leaf_nodes": 127, "min_samples_leaf": 4, "max_depth": 5, "random_state": SEED},
 }
 
 
@@ -86,6 +91,20 @@ def now_utc() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+@contextmanager
+def experiment_timeout(seconds: int = 600):
+    def timeout_handler(signum: int, frame: Any) -> None:
+        raise TimeoutError(f"experiment exceeded {seconds} seconds")
+
+    previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def version(package: str) -> str:
     try:
         return metadata.version(package)
@@ -109,19 +128,31 @@ def group_ids(frame: pd.DataFrame) -> np.ndarray:
 
 
 def prepare_splits(force: bool = False) -> dict[str, Any]:
-    data, duplicates, null_rows = load_source()
-    if force or not all(path.exists() for path in SPLIT_PATHS.values()):
+    raw = pd.read_csv(SOURCE)
+    null_rows = int(raw.isna().any(axis=1).sum())
+    paper_data = raw.dropna().reset_index(drop=True)
+    data, duplicates, _ = load_source()
+    if force or not all(path.exists() for path in (*SPLIT_PATHS.values(), *PAPER_PATHS.values())):
+        paper_splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
+        paper_train_idx, paper_test_idx = next(
+            paper_splitter.split(paper_data[FEATURES], paper_data[TARGET], group_ids(paper_data))
+        )
+        paper_train = paper_data.iloc[paper_train_idx].copy()
+        paper_test = paper_data.iloc[paper_test_idx].copy()
         train, test = train_test_split(data, test_size=0.2, random_state=SEED, stratify=data[TARGET])
         group_splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
         group_train_idx, group_test_idx = next(group_splitter.split(data[FEATURES], data[TARGET], group_ids(data)))
         grouped_train, grouped_test = data.iloc[group_train_idx], data.iloc[group_test_idx]
         SPLITS.mkdir(parents=True, exist_ok=True)
+        paper_train.to_csv(PAPER_PATHS["train"], index=False)
+        paper_test.to_csv(PAPER_PATHS["test"], index=False)
         train.to_csv(SPLIT_PATHS["stratified_train"], index=False)
         test.to_csv(SPLIT_PATHS["stratified_test"], index=False)
         grouped_train.to_csv(SPLIT_PATHS["grouped_train"], index=False)
         grouped_test.to_csv(SPLIT_PATHS["grouped_test"], index=False)
+    paper_train, paper_test = (pd.read_csv(path) for path in PAPER_PATHS.values())
     strat_train, strat_test, group_train, group_test = (pd.read_csv(path) for path in SPLIT_PATHS.values())
-    for train, test in ((strat_train, strat_test), (group_train, group_test)):
+    for train, test in ((paper_train, paper_test), (strat_train, strat_test), (group_train, group_test)):
         overlap = len(set(map(tuple, train.to_numpy())) & set(map(tuple, test.to_numpy())))
         if overlap:
             raise AssertionError(f"Exact train/test row overlap: {overlap}")
@@ -131,6 +162,12 @@ def prepare_splits(force: bool = False) -> dict[str, Any]:
     )
     if shared_predictors:
         raise AssertionError(f"Grouped split predictor overlap: {shared_predictors}")
+    paper_shared_predictors = len(
+        set(map(tuple, paper_train[FEATURES].to_numpy()))
+        & set(map(tuple, paper_test[FEATURES].to_numpy()))
+    )
+    if paper_shared_predictors:
+        raise AssertionError(f"Paper-faithful split predictor overlap: {paper_shared_predictors}")
     counts = lambda frame: {int(k): int(v) for k, v in frame[TARGET].value_counts().sort_index().items()}
     config = {
         "created_utc": now_utc(), "seed": SEED, "target": TARGET, "features": FEATURES,
@@ -144,10 +181,43 @@ def prepare_splits(force: bool = False) -> dict[str, Any]:
         "stratified_split": {"type": "80/20 stratified split after exact deduplication", "train_rows": len(strat_train), "test_rows": len(strat_test), "train_counts": counts(strat_train), "test_counts": counts(strat_test), "test_ratio_percent": {str(k): round(v / len(strat_test) * 100, 4) for k, v in counts(strat_test).items()}},
         "grouped_split": {"type": "first shuffled StratifiedGroupKFold(5) fold grouped by identical predictors", "train_rows": len(group_train), "test_rows": len(group_test), "train_counts": counts(group_train), "test_counts": counts(group_test)},
         "paper_parameters": PAPER_PARAMS,
-        "meta_model_deviation": "GradientBoostingClassifier(loss='log_loss') used as a documented LogitBoost-style surrogate, not canonical LogitBoost.",
+        "meta_model_deviation": "GradientBoostingClassifier(loss='log_loss') used as additive logistic boosting surrogate; not canonical LogitBoost.",
         "python_version": platform.python_version(),
         "versions": {p: version(p) for p in ("numpy", "pandas", "scikit-learn", "imbalanced-learn", "xgboost", "smote-variants", "matplotlib", "shap")},
         "specialized_sampler_status": {},
+        "sampler_install_attempt": {
+            "package": "smote-variants==1.0.1",
+            "environment": ".venv/sampler-install",
+            "wheel_install": "completed with --no-deps",
+            "import_validation": "failed: metric_learn is absent; no retry or main-environment install performed",
+            "available_methods": [],
+        },
+        "dataset_variants": {
+            "paper_faithful": {
+                "deduplicated": False,
+                "split_rule": "first StratifiedGroupKFold(5) fold grouped by identical predictor tuples; all 100k source rows retained",
+                "train_rows": len(paper_train), "test_rows": len(paper_test),
+                "train_counts": counts(paper_train), "test_counts": counts(paper_test),
+                "test_prevalence": float(paper_test[TARGET].mean()),
+                "files": {key: str(path.relative_to(ROOT)) for key, path in PAPER_PATHS.items()},
+            },
+            "deduplicated": {
+                "deduplicated": True,
+                "split_rule": "stratified 80/20 row split after exact duplicate removal",
+                "train_rows": len(strat_train), "test_rows": len(strat_test),
+                "train_counts": counts(strat_train), "test_counts": counts(strat_test),
+                "test_prevalence": float(strat_test[TARGET].mean()),
+                "files": {"train": str(SPLIT_PATHS["stratified_train"].relative_to(ROOT)), "test": str(SPLIT_PATHS["stratified_test"].relative_to(ROOT))},
+            },
+            "predictor_grouped": {
+                "deduplicated": True,
+                "split_rule": "first StratifiedGroupKFold(5) fold grouped by identical predictors",
+                "train_rows": len(group_train), "test_rows": len(group_test),
+                "train_counts": counts(group_train), "test_counts": counts(group_test),
+                "test_prevalence": float(group_test[TARGET].mean()),
+                "files": {"train": str(SPLIT_PATHS["grouped_train"].relative_to(ROOT)), "test": str(SPLIT_PATHS["grouped_test"].relative_to(ROOT))},
+            },
+        },
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "config.json").write_text(json.dumps(config, indent=2, default=int) + "\n")
@@ -237,7 +307,7 @@ def model_scores(model: Any, x: np.ndarray) -> np.ndarray:
 
 def metrics(y: pd.Series, predicted: np.ndarray, scores: np.ndarray, fit_s: float, predict_s: float) -> dict[str, Any]:
     tn, fp, fn, tp = confusion_matrix(y, predicted, labels=[0, 1]).ravel()
-    return {"accuracy": accuracy_score(y, predicted), "precision": precision_score(y, predicted, zero_division=0), "recall": recall_score(y, predicted, zero_division=0), "f1": f1_score(y, predicted, zero_division=0), "specificity": tn / (tn + fp), "roc_auc": roc_auc_score(y, scores), "pr_auc": average_precision_score(y, scores), "tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn), "train_seconds": fit_s, "predict_seconds": predict_s}
+    return {"accuracy": accuracy_score(y, predicted), "precision": precision_score(y, predicted, zero_division=0), "recall": recall_score(y, predicted, zero_division=0), "f1": f1_score(y, predicted, zero_division=0), "specificity": tn / (tn + fp), "balanced_accuracy": balanced_accuracy_score(y, predicted), "roc_auc": roc_auc_score(y, scores), "pr_auc": average_precision_score(y, scores), "tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn), "train_seconds": fit_s, "predict_seconds": predict_s}
 
 
 def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampler_name: str, tune: bool = False) -> tuple[np.ndarray, np.ndarray, float, float, dict[str, Any]]:
@@ -273,8 +343,7 @@ def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampl
     meta_start = time.perf_counter()
     if tune:
         search = RandomizedSearchCV(GradientBoostingClassifier(loss="log_loss", random_state=SEED), {
-            "learning_rate": [0.05, 0.1, 0.132, 0.2], "n_estimators": [100, 200, 300, 400],
-            "max_depth": [1, 2, 3, 5], "max_leaf_nodes": [7, 15, 31, 63, 127], "min_samples_leaf": [2, 4, 8],
+            "learning_rate": [0.1, 0.01, 0.001], "n_estimators": randint(50, 200), "max_depth": randint(3, 10),
         }, n_iter=12, scoring="average_precision", cv=StratifiedKFold(3, shuffle=True, random_state=SEED), random_state=SEED, n_jobs=1)
         search.fit(oof, y); meta = search.best_estimator_; best_params = search.best_params_
     else:
@@ -306,48 +375,99 @@ def append_record(record: dict[str, Any]) -> None:
     path = RESULTS / "all_runs.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
-        "run_id", "timestamp_utc", "split", "sampler", "reducer", "model", "seed",
+        "run_id", "run_key", "timestamp_utc", "phase", "dataset_variant", "split",
+        "balancer", "sampler", "reducer", "model", "model_variant", "seed",
         "train_rows", "test_rows", "status", "error", "rfe_features", "tuned_parameters",
-        "accuracy", "precision", "recall", "f1", "specificity", "roc_auc", "pr_auc",
-        "tp", "fp", "tn", "fn", "train_seconds", "predict_seconds",
+        "decision_threshold", "accuracy", "precision", "recall", "f1", "specificity",
+        "balanced_accuracy", "roc_auc", "pr_auc", "brier_score", "tp", "fp", "tn", "fn",
+        "train_seconds", "predict_seconds",
     ]
+    ensure_result_schema(path, fields)
     with path.open("a", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
-        if path.stat().st_size == 0: writer.writeheader()
+        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
+        if path.stat().st_size == 0:
+            writer.writeheader()
         writer.writerow(record)
 
 
-def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, sampler: str, reducer: str, models: list[str], tune: bool = False) -> None:
-    base = {"timestamp_utc": now_utc(), "split": split, "sampler": sampler, "reducer": reducer, "seed": SEED, "train_rows": len(train), "test_rows": len(test)}
+def ensure_result_schema(path: Path, fields: list[str]) -> None:
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    with path.open(newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        old_fields = reader.fieldnames or []
+        if old_fields == fields:
+            return
+        old_rows = list(reader)
+    for row in old_rows:
+        row.setdefault("phase", "historical_reference")
+        row.setdefault("dataset_variant", "deduplicated")
+        row.setdefault("balancer", row.get("sampler", "ROS"))
+        row.setdefault("model_variant", "previous_runner")
+        row.setdefault("run_key", "")
+        row.setdefault("decision_threshold", 0.5)
+        row.setdefault("balanced_accuracy", "")
+        row.setdefault("brier_score", "")
+    temporary = path.with_suffix(".csv.migrating")
+    with temporary.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(old_rows)
+    temporary.replace(path)
+
+
+def completed_run_keys() -> set[str]:
+    path = RESULTS / "all_runs.csv"
+    if not path.exists():
+        return set()
+    with path.open(newline="", encoding="utf-8") as stream:
+        return {row["run_key"] for row in csv.DictReader(stream) if row.get("run_key")}
+
+
+def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset_variant: str, sampler: str, reducer: str, models: list[str], tune: bool = False) -> None:
+    base = {"timestamp_utc": now_utc(), "phase": "phase1_baseline", "dataset_variant": dataset_variant, "split": split, "balancer": sampler, "sampler": sampler, "reducer": reducer, "seed": SEED, "train_rows": len(train), "test_rows": len(test)}
+    finished = completed_run_keys()
     try:
         make_sampler(sampler)
     except Exception as error:  # noqa: BLE001
         for name in models:
+            model_variant = "tuned" if name == "PaRSEL_tuned" else "paper_parameters"
+            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}"
+            if run_key in finished:
+                continue
             append_record({
                 **base,
                 "run_id": uuid.uuid4().hex[:12],
+                "run_key": run_key,
                 "model": name,
+                "model_variant": model_variant,
                 "status": "failed",
                 "error": f"{type(error).__name__}: {error}",
             })
         return
     try:
         for name in models:
+            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}"
+            if run_key in finished:
+                continue
             run_id = uuid.uuid4().hex[:12]
-            record = {**base, "run_id": run_id, "model": name, "status": "ok", "error": "", "rfe_features": "", "tuned_parameters": ""}
+            tuned = name == "PaRSEL_tuned"
+            model_name = "PaRSEL" if tuned else name
+            record = {**base, "run_id": run_id, "run_key": run_key, "model": model_name, "model_variant": "tuned" if tuned else "paper_parameters", "status": "ok", "error": "", "rfe_features": "", "tuned_parameters": ""}
             try:
-                if name == "PaRSEL":
-                    predicted, scores, fit_s, pred_s, params = fit_parsel(train, test, reducer, sampler, tune)
-                else:
-                    scale = name != "XGBoost" or reducer != "none"
-                    x_train, x_test, rfe_count = transform_pair(train, test, reducer, scale=scale)
-                    record["rfe_features"] = rfe_count or ""
-                    start = time.perf_counter()
-                    x_bal, y_bal = make_sampler(sampler).fit_resample(x_train, train[TARGET])
-                    model = make_model(name); model.fit(x_bal, y_bal); fit_s = time.perf_counter() - start
-                    start = time.perf_counter(); scores = model_scores(model, x_test); predicted = model.predict(x_test); pred_s = time.perf_counter() - start; params = {}
+                with experiment_timeout():
+                    if model_name == "PaRSEL":
+                        predicted, scores, fit_s, pred_s, params = fit_parsel(train, test, reducer, sampler, tuned)
+                    else:
+                        scale = name != "XGBoost" or reducer != "none"
+                        x_train, x_test, rfe_count = transform_pair(train, test, reducer, scale=scale)
+                        record["rfe_features"] = rfe_count or ""
+                        start = time.perf_counter()
+                        x_bal, y_bal = make_sampler(sampler).fit_resample(x_train, train[TARGET])
+                        model = make_model(name); model.fit(x_bal, y_bal); fit_s = time.perf_counter() - start
+                        start = time.perf_counter(); scores = model_scores(model, x_test); predicted = model.predict(x_test); pred_s = time.perf_counter() - start; params = {}
                 record.update(metrics(test[TARGET], predicted, scores, fit_s, pred_s)); record["tuned_parameters"] = json.dumps(params, sort_keys=True)
-                if name == "PaRSEL" and split == "stratified" and sampler == "ROS" and reducer == "none":
+                if model_name == "PaRSEL" and not tuned:
                     curve = pd.DataFrame({"target": test[TARGET].to_numpy(), "score": scores, "prediction": predicted})
                     curve.to_csv(RESULTS / f"curve_{run_id}.csv", index=False)
             except Exception as error:  # noqa: BLE001
@@ -363,25 +483,43 @@ def main() -> None:
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--priority-only", action="store_true")
     parser.add_argument("--include-tuned", action="store_true")
-    parser.add_argument("--split", choices=("stratified", "grouped", "both"), default="stratified")
+    parser.add_argument("--split", choices=("paper_faithful", "deduplicated", "predictor_grouped", "both"), default="paper_faithful")
+    parser.add_argument("--phase1-priority", action="store_true")
     args = parser.parse_args()
     config = prepare_splits(args.force_splits)
     specialized = {}
     for name in ("ProWRAS", "LoRAS", "MWMOTE", "RWOS"):
-        try: make_sampler(name); specialized[name] = "available"
+        try:
+            make_sampler(name)
+            specialized[name] = "available"
         except Exception as error:  # noqa: BLE001
-            specialized[name] = f"unavailable: {error}"
+            specialized[name] = f"unavailable: isolated wheel import failed ({error}); missing metric-learn, no retry"
     config["specialized_sampler_status"] = specialized
     (RESULTS / "config.json").write_text(json.dumps(config, indent=2, default=int) + "\n")
     print(json.dumps({"stratified": config["stratified_split"], "grouped": config["grouped_split"], "specialized_samplers": specialized}, indent=2))
     if args.prepare_only: return
-    models = ["PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate", "PaRSEL"]
-    combos = [("ROS", "none"), ("ProWRAS", "LDA"), ("ProWRAS", "RFE")] if args.priority_only else [(s, r) for s in ("ROS", "ProWRAS", "LoRAS", "ADASYN", "SMOTE", "Borderline-SMOTE", "MWMOTE", "RWOS") for r in ("none", "RFE", "LDA", "FA")]
-    splits = ("stratified", "grouped") if args.split == "both" else (args.split,)
-    for split in splits:
-        train = pd.read_csv(SPLIT_PATHS[f"{split}_train"]); test = pd.read_csv(SPLIT_PATHS[f"{split}_test"])
+    if args.phase1_priority:
+        combos = [("ROS", "none"), ("ROS", "RFE"), ("ROS", "LDA"), ("SMOTE", "LDA"), ("SMOTE", "RFE"), ("ADASYN", "LDA"), ("ProWRAS", "LDA"), ("ProWRAS", "RFE")]
+        reference_models = ["PaRSEL", "PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate"]
+        if args.include_tuned:
+            reference_models.append("PaRSEL_tuned")
+        models_by_combo = {combo: (reference_models if combo == ("ROS", "none") else ["PaRSEL"]) for combo in combos}
+    else:
+        models_by_combo = {}
+        combos = [(sampler, reducer) for sampler in ("ROS", "ProWRAS", "LoRAS", "ADASYN", "SMOTE", "Borderline-SMOTE", "MWMOTE", "RWOS") for reducer in ("none", "RFE", "LDA", "FA")]
+    for combo in combos:
+        models_by_combo.setdefault(combo, ["PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate", "PaRSEL"])
+    variants = [args.split] if args.split != "both" else ["paper_faithful", "deduplicated", "predictor_grouped"]
+    variant_paths = {
+        "paper_faithful": PAPER_PATHS,
+        "deduplicated": {"train": SPLIT_PATHS["stratified_train"], "test": SPLIT_PATHS["stratified_test"]},
+        "predictor_grouped": {"train": SPLIT_PATHS["grouped_train"], "test": SPLIT_PATHS["grouped_test"]},
+    }
+    for variant in variants:
+        files = variant_paths[variant]
+        train, test = pd.read_csv(files["train"]), pd.read_csv(files["test"])
         for sampler, reducer in combos:
-            run_combination(train, test, split, sampler, reducer, models, tune=args.include_tuned and sampler == "ROS" and reducer == "none")
+            run_combination(train, test, variant, variant, sampler, reducer, models_by_combo[(sampler, reducer)])
 
 
 if __name__ == "__main__":

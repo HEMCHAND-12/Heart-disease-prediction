@@ -33,3 +33,13 @@ Updated: 2026-09-30
 - Treat library/runtime limitations as deviations. Any deterministic subsampling must be training-only, seeded, and recorded with its original and sampled sizes.
 - Compare measured results to paper claims without tuning against the test set. Explain the paper's internal metric inconsistencies and any failure to reproduce rather than adjusting the test protocol to match.
 - Generate SHAP plots only after core experiments and comparisons are complete.
+
+## Phase Framing Update (2026-09-30)
+
+- Present the project as an extension of Noor et al., not a reproduction-only project: Phase 1 is the paper-method baseline; Phase 2 is the separately evaluated PaRSEL+ proposal.
+- Keep a paper-faithful no-dedup dataset variant, but assign all identical predictor tuples to one partition. A plain row-stratified split would put duplicate records in both train and test, conflicting with the no-leakage requirement. This grouped-stratified split is the primary compromise: it retains all 100,000 rows and approximate 80/20 class-stratified proportions but is not the paper's undocumented split.
+- Preserve the earlier 76,916/19,230 deduplicated stratified split and predictor-grouped split as separate robustness variants. Do not overwrite existing result rows; add the new schema fields by a one-time lossless CSV schema migration before appending further runs.
+- The single permitted install attempt placed `smote-variants==1.0.1` in `.venv/sampler-install` with `--no-deps` and a 10-minute timeout. Wheel installation completed, but import failed because `metric-learn` is absent. No dependency install was attempted in the main environment and no retry will be made. Mark ProWRAS, LoRAS, MWMOTE, and RWO_sampling unavailable; the wheel remains isolated.
+- The standalone ROS/no-reduction rows in `results/all_runs.csv` predate the Phase 1 exact-parameter runner. Preserve them as historical standalone reference rows, but do not treat them as PaRSEL or as a completed Phase 1 comparison.
+- The Phase 1 runner uses a 600-second alarm per model/configuration; timeout and sampler/import failures are checkpointed and skipped on resume.
+- First successful Phase 1 primary run (paper-faithful, ROS, no reducer, untuned PaRSEL): accuracy 0.9544, precision 0.7472, recall 0.7006, F1 0.7231, specificity 0.97798, balanced accuracy 0.8393, ROC-AUC 0.9780, PR-AUC 0.8393. This does not reproduce the paper's approximate 97% accuracy / 80% F1 claim; do not tune against the test set to close the gap.
