@@ -124,6 +124,28 @@ def comparison_report(runs: pd.DataFrame) -> None:
         lines.append(f"| {label} | {paper} | {ours} | {delta} | {verdict(value, target, claim_type)} |")
     lines += [
         "",
+        "## Tuned PaRSEL vs. Paper Table 4 Claim",
+        "",
+        "Our tuned variant uses ROS with no reduction; the paper's tuned narrative is for ProWRAS+LDA. Values are shown for context, but this is not a configuration-matched comparison.",
+        "",
+        "| Metric | Paper narrative | Our train-only tuned variant | Difference | Verdict |",
+        "|---|---:|---:|---:|---|",
+    ]
+    tuned_rows = successful.loc[
+        (successful.dataset_variant == "paper_faithful")
+        & (successful.sampler == "ROS")
+        & (successful.reducer == "none")
+        & (successful.model == "PaRSEL")
+        & (successful.model_variant == "tuned")
+    ]
+    tuned = tuned_rows.iloc[-1] if not tuned_rows.empty else None
+    for label, key, target in (("Accuracy", "accuracy", 0.98), ("F1", "f1", 0.95), ("Precision", "precision", 0.94), ("Recall", "recall", 0.97)):
+        value = float(tuned[key]) if tuned is not None and pd.notna(tuned[key]) else None
+        ours = f"{value:.4f}" if value is not None else "not run"
+        delta = f"{value - target:+.4f}" if value is not None else "n/a"
+        lines.append(f"| {label} | {target:.0%} | {ours} | {delta} | {'not run' if value is None else 'not comparable'} |")
+    lines += [
+        "",
         "## Completed Standalone Reference Runs",
         "",
         "These are individual classifiers on the same fixed ROS/no-reduction training and test split. They are not the PaRSEL stack and are included only as partial progress.",

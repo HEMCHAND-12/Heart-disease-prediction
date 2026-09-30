@@ -1,10 +1,11 @@
 import pandas as pd
 
-from scripts.reproduce import (
+from scripts.run_experiments import (
     FEATURES,
     NUMERIC,
     TARGET,
     TrainWinsorizer,
+    append_record,
     group_ids,
     prepare_splits,
     transform_pair,
@@ -78,7 +79,7 @@ def test_winsorizer_bounds_are_learned_from_train_only() -> None:
 
 
 def test_test_rows_cannot_change_training_preprocessing() -> None:
-    from scripts.reproduce import CATEGORICAL
+    from scripts.run_experiments import CATEGORICAL
 
     train = pd.DataFrame({
         "gender": ["Female", "Male"] * 10,
@@ -95,9 +96,29 @@ def test_test_rows_cannot_change_training_preprocessing() -> None:
     changed_test = test.copy()
     changed_test.loc[:, CATEGORICAL[0]] = "unseen-category"
     changed_test.loc[:, NUMERIC[0]] = 1_000_000
-    original_train, _, _ = transform_pair(train, test, "none")
-    changed_train, _, _ = transform_pair(train, changed_test, "none")
+    original_train, _, _, _ = transform_pair(train, test, "none")
+    changed_train, _, _, _ = transform_pair(train, changed_test, "none")
     assert (original_train == changed_train).all()
+
+
+def test_binary_lda_metadata_records_one_finite_component() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    train = pd.read_csv(root / "splits" / "paper_faithful_train.csv")
+    train = train.groupby(TARGET, group_keys=False).sample(n=300, random_state=42)
+    test = pd.read_csv(root / "splits" / "paper_faithful_test.csv").head(300)
+    x_train, x_test, _, metadata = transform_pair(train, test, "LDA")
+    assert x_train.shape[1] == x_test.shape[1] == metadata["component_count"] == 1
+    assert metadata["input_shape"][1] == 8
+    assert not metadata["train_has_nan"] and not metadata["test_has_nan"]
+
+
+def test_parsel_record_requires_reducer_metadata() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="reducer_metadata"):
+        append_record({"model": "PaRSEL"})
 
 
 def test_split_builder_records_binary_classes() -> None:

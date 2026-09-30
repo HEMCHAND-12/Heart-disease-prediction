@@ -1,21 +1,18 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: reproduce reproduce-priority robustness report test
+.PHONY: all baseline experiments report test
 
-reproduce:
-	mkdir -p results
-	nohup sh -c '$(PYTHON) scripts/reproduce.py --force-splits --phase1-priority --split both --include-tuned && $(PYTHON) scripts/report_results.py' >> results/phase1.log 2>&1 & echo $$! > results/phase1.pid
+all: baseline experiments
 
-reproduce-priority:
-	mkdir -p results
-	nohup sh -c '$(PYTHON) scripts/reproduce.py --force-splits --phase1-priority --split paper_faithful --include-tuned && $(PYTHON) scripts/report_results.py' >> results/phase1.log 2>&1 & echo $$! > results/phase1.pid
+baseline:
+	$(PYTHON) -m scripts.baseline_parsel
 
-robustness:
+experiments:
 	mkdir -p results
-	nohup sh -c '$(PYTHON) scripts/reproduce.py --phase1-priority --split predictor_grouped && $(PYTHON) scripts/report_results.py' >> results/robustness.log 2>&1 & echo $$! > results/robustness.pid
+	nohup sh -c '$(PYTHON) -m scripts.run_experiments --phase1-priority --split both --include-tuned && $(PYTHON) -m scripts.report_results' >> results/phase1.log 2>&1 & echo $$! > results/phase1.pid
 
 report:
-	$(PYTHON) scripts/report_results.py
+	$(PYTHON) -m scripts.report_results
 
 test:
 	$(PYTHON) -m pytest -q

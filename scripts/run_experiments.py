@@ -59,6 +59,7 @@ CONTINUOUS = ["age", "bmi", "HbA1c_level", "blood_glucose_level"]
 FEATURES = [*CATEGORICAL, *NUMERIC]
 SPLIT_PATHS = {name: SPLITS / f"{name}.csv" for name in ("stratified_train", "stratified_test", "grouped_train", "grouped_test")}
 PAPER_PATHS = {name: SPLITS / f"paper_faithful_{name}.csv" for name in ("train", "test")}
+RFE_SELECTION_CACHE: dict[str, int] = {}
 
 PAPER_PARAMS: dict[str, dict[str, Any]] = {
     "PAC": {"C": 1.6063676259174505e-05, "max_iter": 2000, "random_state": 30},
@@ -184,7 +185,10 @@ def prepare_splits(force: bool = False) -> dict[str, Any]:
         "meta_model_deviation": "GradientBoostingClassifier(loss='log_loss') used as additive logistic boosting surrogate; not canonical LogitBoost.",
         "python_version": platform.python_version(),
         "versions": {p: version(p) for p in ("numpy", "pandas", "scikit-learn", "imbalanced-learn", "xgboost", "smote-variants", "matplotlib", "shap")},
-        "specialized_sampler_status": {},
+        "specialized_sampler_status": {
+            name: "unavailable (smote-variants import failed: metric-learn missing)"
+            for name in ("ProWRAS", "LoRAS", "MWMOTE", "RWOS")
+        },
         "sampler_install_attempt": {
             "package": "smote-variants==1.0.1",
             "environment": ".venv/sampler-install",
@@ -198,6 +202,8 @@ def prepare_splits(force: bool = False) -> dict[str, Any]:
                 "split_rule": "first StratifiedGroupKFold(5) fold grouped by identical predictor tuples; all 100k source rows retained",
                 "train_rows": len(paper_train), "test_rows": len(paper_test),
                 "train_counts": counts(paper_train), "test_counts": counts(paper_test),
+                "ros_train_counts": {str(label): max(counts(paper_train).values()) for label in (0, 1)},
+                "ros_train_rows": 2 * max(counts(paper_train).values()),
                 "test_prevalence": float(paper_test[TARGET].mean()),
                 "files": {key: str(path.relative_to(ROOT)) for key, path in PAPER_PATHS.items()},
             },
@@ -251,24 +257,60 @@ def select_rfe_count(x: np.ndarray, y: pd.Series) -> int:
     return max(scores)[1]
 
 
-def transform_pair(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, scale: bool = True, rfe_count: int | None = None) -> tuple[np.ndarray, np.ndarray, int | None]:
+def transform_pair(
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    reducer_name: str,
+    scale: bool = True,
+    rfe_count: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, int | None, dict[str, Any]]:
     winsor = TrainWinsorizer().fit(train[FEATURES])
     pre = preprocessor(scale)
     x_train = pre.fit_transform(winsor.transform(train[FEATURES]), train[TARGET])
     x_test = pre.transform(winsor.transform(test[FEATURES]))
     reducer: Any = None
+    feature_names = list(pre.get_feature_names_out())
     if reducer_name == "RFE":
         rfe_count = rfe_count or select_rfe_count(x_train, train[TARGET])
         reducer = RFE(RandomForestClassifier(n_estimators=100, max_depth=8, random_state=SEED, n_jobs=4), n_features_to_select=rfe_count).fit(x_train, train[TARGET])
+        selected_features = [name for name, selected in zip(feature_names, reducer.support_) if selected]
+        metadata = {
+            "reducer": "RFE",
+            "n_features": int(rfe_count),
+            "selected_features": selected_features,
+            "estimator": "RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)",
+            "scaling": scale,
+        }
     elif reducer_name == "LDA":
         reducer = LinearDiscriminantAnalysis(n_components=1).fit(x_train, train[TARGET])
+        metadata = {
+            "reducer": "LDA",
+            "component_count": 1,
+            "input_shape": list(x_train.shape),
+            "scaling": scale,
+        }
     elif reducer_name == "FA":
-        reducer = FactorAnalysis(n_components=min(4, x_train.shape[1]), random_state=SEED).fit(x_train)
+        component_count = min(4, x_train.shape[1])
+        reducer = FactorAnalysis(n_components=component_count, random_state=SEED).fit(x_train)
+        metadata = {
+            "reducer": "FA",
+            "component_count": int(component_count),
+            "input_shape": list(x_train.shape),
+            "scaling": scale,
+        }
     elif reducer_name != "none":
         raise ValueError(f"Unknown reducer: {reducer_name}")
+    else:
+        metadata = {"reducer": "none", "input_features": feature_names, "scaling": scale}
     if reducer is not None:
         x_train, x_test = reducer.transform(x_train), reducer.transform(x_test)
-    return x_train, x_test, rfe_count
+    metadata.update({
+        "train_shape_after_reduction": list(x_train.shape),
+        "test_shape_after_reduction": list(x_test.shape),
+        "train_has_nan": bool(np.isnan(x_train).any()),
+        "test_has_nan": bool(np.isnan(x_test).any()),
+    })
+    return x_train, x_test, rfe_count, metadata
 
 
 def make_model(name: str, overrides: dict[str, Any] | None = None) -> Any:
@@ -310,19 +352,32 @@ def metrics(y: pd.Series, predicted: np.ndarray, scores: np.ndarray, fit_s: floa
     return {"accuracy": accuracy_score(y, predicted), "precision": precision_score(y, predicted, zero_division=0), "recall": recall_score(y, predicted, zero_division=0), "f1": f1_score(y, predicted, zero_division=0), "specificity": tn / (tn + fp), "balanced_accuracy": balanced_accuracy_score(y, predicted), "roc_auc": roc_auc_score(y, scores), "pr_auc": average_precision_score(y, scores), "tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn), "train_seconds": fit_s, "predict_seconds": predict_s}
 
 
-def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampler_name: str, tune: bool = False) -> tuple[np.ndarray, np.ndarray, float, float, dict[str, Any]]:
+def fit_parsel(
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    reducer_name: str,
+    sampler_name: str,
+    tune: bool = False,
+    rfe_count: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, float, float, dict[str, Any], dict[str, Any]]:
     y = train[TARGET]
     base_names = ["PAC", "Ridge", "SGD", "XGBoost"]
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
     oof = np.zeros((len(y), len(base_names)))
     fit_time = 0.0
+    selected_rfe_count = rfe_count
+    if reducer_name == "RFE" and selected_rfe_count is None:
+        x_for_selection, _, _, _ = transform_pair(train, train.iloc[:0], "none", scale=True)
+        selected_rfe_count = select_rfe_count(x_for_selection, y)
     for fit_idx, valid_idx in folds.split(train[FEATURES], y):
         fold_start = time.perf_counter()
         fold_train = train.iloc[fit_idx]
         fold_valid = train.iloc[valid_idx]
-        x_fold, x_valid, _ = transform_pair(fold_train, fold_valid, reducer_name, scale=True)
+        x_fold, x_valid, _, _ = transform_pair(
+            fold_train, fold_valid, reducer_name, scale=True, rfe_count=selected_rfe_count
+        )
         if reducer_name == "none":
-            x_fold_xgb, x_valid_xgb, _ = transform_pair(fold_train, fold_valid, reducer_name, scale=False)
+            x_fold_xgb, x_valid_xgb, _, _ = transform_pair(fold_train, fold_valid, reducer_name, scale=False)
         else:
             x_fold_xgb, x_valid_xgb = x_fold, x_valid
         x_fold, y_fold = make_sampler(sampler_name).fit_resample(x_fold, fold_train[TARGET])
@@ -351,10 +406,12 @@ def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampl
         meta.fit(oof, y)
     fit_time += time.perf_counter() - meta_start
     final_start = time.perf_counter()
-    x_train, x_test, _ = transform_pair(train, test, reducer_name, scale=True)
+    x_train, x_test, _, reducer_metadata = transform_pair(
+        train, test, reducer_name, scale=True, rfe_count=selected_rfe_count
+    )
     x_balanced, y_balanced = make_sampler(sampler_name).fit_resample(x_train, y)
     if reducer_name == "none":
-        x_xgb_train, x_xgb_test, _ = transform_pair(train, test, reducer_name, scale=False)
+        x_xgb_train, x_xgb_test, _, _ = transform_pair(train, test, reducer_name, scale=False)
         x_xgb_balanced, _ = make_sampler(sampler_name).fit_resample(x_xgb_train, y)
     else:
         x_xgb_train, x_xgb_test, x_xgb_balanced = x_train, x_test, x_balanced
@@ -369,16 +426,19 @@ def fit_parsel(train: pd.DataFrame, test: pd.DataFrame, reducer_name: str, sampl
     predicted = meta.predict(meta_test)
     scores = model_scores(meta, meta_test)
     predict_time = time.perf_counter() - start
-    return predicted, scores, fit_time, predict_time, best_params
+    return predicted, scores, fit_time, predict_time, best_params, reducer_metadata
 
 
 def append_record(record: dict[str, Any]) -> None:
+    if record.get("model") == "PaRSEL" and not record.get("reducer_metadata"):
+        raise ValueError("PaRSEL result records require reducer_metadata")
     path = RESULTS / "all_runs.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
         "run_id", "run_key", "timestamp_utc", "phase", "dataset_variant", "split",
         "balancer", "sampler", "reducer", "model", "model_variant", "seed",
         "train_rows", "test_rows", "status", "error", "rfe_features", "tuned_parameters",
+        "reducer_metadata",
         "decision_threshold", "accuracy", "precision", "recall", "f1", "specificity",
         "balanced_accuracy", "roc_auc", "pr_auc", "brier_score", "tp", "fp", "tn", "fn",
         "train_seconds", "predict_seconds",
@@ -409,6 +469,10 @@ def ensure_result_schema(path: Path, fields: list[str]) -> None:
         row.setdefault("decision_threshold", 0.5)
         row.setdefault("balanced_accuracy", "")
         row.setdefault("brier_score", "")
+        if row.get("model") == "PaRSEL":
+            row.setdefault("reducer_metadata", json.dumps({"reducer": row.get("reducer", "unknown"), "legacy_metadata_unavailable": True}))
+        else:
+            row.setdefault("reducer_metadata", "")
     temporary = path.with_suffix(".csv.migrating")
     with temporary.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
@@ -433,7 +497,8 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
     except Exception as error:  # noqa: BLE001
         for name in models:
             model_variant = "tuned" if name == "PaRSEL_tuned" else "paper_parameters"
-            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}"
+            rfe_version = ":rfe_fixedn_v2" if reducer == "RFE" else ""
+            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}{rfe_version}"
             if run_key in finished:
                 continue
             append_record({
@@ -444,24 +509,60 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
                 "model_variant": model_variant,
                 "status": "failed",
                 "error": f"{type(error).__name__}: {error}",
+                "reducer_metadata": json.dumps({"reducer": reducer, "fit_status": "unavailable_sampler"}) if name.startswith("PaRSEL") else "",
             })
         return
+    selected_rfe_count: int | None = None
+    if reducer == "RFE":
+        try:
+            if dataset_variant in RFE_SELECTION_CACHE:
+                selected_rfe_count = RFE_SELECTION_CACHE[dataset_variant]
+            else:
+                with experiment_timeout():
+                    x_for_selection, _, _, _ = transform_pair(train, train.iloc[:0], "none", scale=True)
+                    selected_rfe_count = select_rfe_count(x_for_selection, train[TARGET])
+                RFE_SELECTION_CACHE[dataset_variant] = selected_rfe_count
+        except Exception as error:  # noqa: BLE001
+            for name in models:
+                is_parsel = name.startswith("PaRSEL")
+                append_record({
+                    **base,
+                    "run_id": uuid.uuid4().hex[:12],
+                    "run_key": f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}:rfe_fixedn_v2",
+                    "model": "PaRSEL" if name == "PaRSEL_tuned" else name,
+                    "model_variant": "tuned" if name == "PaRSEL_tuned" else "paper_parameters",
+                    "status": "failed",
+                    "error": f"RFE count selection failed: {type(error).__name__}: {error}",
+                    "rfe_features": "",
+                    "tuned_parameters": "",
+                    "reducer_metadata": json.dumps({"reducer": "RFE", "fit_status": "selection_failed"}) if is_parsel else "",
+                })
+            return
     try:
         for name in models:
-            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}"
+            rfe_version = ":rfe_fixedn_v2" if reducer == "RFE" else ""
+            run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}{rfe_version}"
             if run_key in finished:
                 continue
             run_id = uuid.uuid4().hex[:12]
             tuned = name == "PaRSEL_tuned"
             model_name = "PaRSEL" if tuned else name
-            record = {**base, "run_id": run_id, "run_key": run_key, "model": model_name, "model_variant": "tuned" if tuned else "paper_parameters", "status": "ok", "error": "", "rfe_features": "", "tuned_parameters": ""}
+            planned_metadata = {"reducer": reducer, "fit_status": "not_completed"}
+            record = {**base, "run_id": run_id, "run_key": run_key, "model": model_name, "model_variant": "tuned" if tuned else "paper_parameters", "status": "ok", "error": "", "rfe_features": "", "tuned_parameters": "", "reducer_metadata": json.dumps(planned_metadata) if model_name == "PaRSEL" else ""}
             try:
                 with experiment_timeout():
                     if model_name == "PaRSEL":
-                        predicted, scores, fit_s, pred_s, params = fit_parsel(train, test, reducer, sampler, tuned)
+                        predicted, scores, fit_s, pred_s, params, reducer_metadata = fit_parsel(
+                            train, test, reducer, sampler, tuned, selected_rfe_count
+                        )
+                        reducer_metadata["tuned_hyperparameters"] = params
+                        record["reducer_metadata"] = json.dumps(reducer_metadata, sort_keys=True)
+                        record["rfe_features"] = reducer_metadata.get("n_features", "")
                     else:
                         scale = name != "XGBoost" or reducer != "none"
-                        x_train, x_test, rfe_count = transform_pair(train, test, reducer, scale=scale)
+                        x_train, x_test, rfe_count, _ = transform_pair(
+                            train, test, reducer, scale=scale, rfe_count=selected_rfe_count
+                        )
                         record["rfe_features"] = rfe_count or ""
                         start = time.perf_counter()
                         x_bal, y_bal = make_sampler(sampler).fit_resample(x_train, train[TARGET])
@@ -486,6 +587,7 @@ def main() -> None:
     parser.add_argument("--include-tuned", action="store_true")
     parser.add_argument("--split", choices=("paper_faithful", "deduplicated", "predictor_grouped", "both"), default="paper_faithful")
     parser.add_argument("--phase1-priority", action="store_true")
+    parser.add_argument("--primary-only", action="store_true", help="Run only the Phase 1 PaRSEL ROS/no-reduction baseline")
     args = parser.parse_args()
     config = prepare_splits(args.force_splits)
     specialized = {}
@@ -493,18 +595,40 @@ def main() -> None:
         try:
             make_sampler(name)
             specialized[name] = "available"
-        except Exception as error:  # noqa: BLE001
-            specialized[name] = f"unavailable: isolated wheel import failed ({error}); missing metric-learn, no retry"
+        except Exception:  # noqa: BLE001
+            specialized[name] = "unavailable (smote-variants import failed: metric-learn missing)"
     config["specialized_sampler_status"] = specialized
     (RESULTS / "config.json").write_text(json.dumps(config, indent=2, default=int) + "\n")
     print(json.dumps({"stratified": config["stratified_split"], "grouped": config["grouped_split"], "specialized_samplers": specialized}, indent=2))
     if args.prepare_only: return
-    if args.phase1_priority:
-        combos = [("ROS", "none"), ("ROS", "RFE"), ("ROS", "LDA"), ("SMOTE", "LDA"), ("SMOTE", "RFE"), ("ADASYN", "LDA"), ("ProWRAS", "LDA"), ("ProWRAS", "RFE")]
+    if args.primary_only:
+        combos = [("ROS", "none")]
+        models_by_combo = {("ROS", "none"): ["PaRSEL"]}
+    elif args.phase1_priority:
+        combos = [
+            ("ROS", "none"),
+            ("ROS", "RFE"),
+            ("ROS", "LDA"),
+            ("SMOTE", "LDA"),
+            ("SMOTE", "RFE"),
+            ("ADASYN", "LDA"),
+            ("ADASYN", "RFE"),
+            ("Borderline-SMOTE", "LDA"),
+            ("ROS", "FA"),
+            ("SMOTE", "FA"),
+            ("ProWRAS", "LDA"),
+            ("ProWRAS", "RFE"),
+            ("LoRAS", "LDA"),
+            ("MWMOTE", "LDA"),
+            ("RWOS", "LDA"),
+        ]
         reference_models = ["PaRSEL", "PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate"]
         if args.include_tuned:
             reference_models.append("PaRSEL_tuned")
-        models_by_combo = {combo: (reference_models if combo == ("ROS", "none") else ["PaRSEL"]) for combo in combos}
+        models_by_combo = {
+            combo: reference_models if combo == ("ROS", "none") else ["PaRSEL", "PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate"]
+            for combo in combos
+        }
     else:
         models_by_combo = {}
         combos = [(sampler, reducer) for sampler in ("ROS", "ProWRAS", "LoRAS", "ADASYN", "SMOTE", "Borderline-SMOTE", "MWMOTE", "RWOS") for reducer in ("none", "RFE", "LDA", "FA")]
@@ -519,8 +643,12 @@ def main() -> None:
     for variant in variants:
         files = variant_paths[variant]
         train, test = pd.read_csv(files["train"]), pd.read_csv(files["test"])
-        for sampler, reducer in combos:
-            run_combination(train, test, variant, variant, sampler, reducer, models_by_combo[(sampler, reducer)])
+        variant_combos = combos
+        if args.phase1_priority and variant != "paper_faithful":
+            variant_combos = [("ROS", "none"), ("ROS", "RFE"), ("ROS", "LDA")]
+        for sampler, reducer in variant_combos:
+            models = models_by_combo.get((sampler, reducer), ["PaRSEL", "PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate"])
+            run_combination(train, test, variant, variant, sampler, reducer, models)
 
 
 if __name__ == "__main__":
