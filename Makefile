@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: all baseline experiments report test
+.PHONY: all baseline experiments report status test
 
 all: baseline experiments
 
@@ -13,6 +13,9 @@ experiments:
 
 report:
 	$(PYTHON) -m scripts.report_results
+
+status:
+	$(PYTHON) -m scripts.status
 
 test:
 	$(PYTHON) -m pytest -q

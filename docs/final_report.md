@@ -8,6 +8,29 @@ Noor et al. (2023) introduce PaRSEL, a stacking approach with Passive Aggressive
 
 Several details needed for strict replication are unspecified, including the exact split ratio/seed, duplicate policy, outlier rules, and fully detailed LogitBoost implementation. The paper also reports recall inconsistently (about 67% versus 70%, with another method-specific value near 77%) and describes a tuned result near 98% accuracy together with 97% recall. These discrepancies are retained as limitations rather than resolved by test-set tuning.
 
+### Problem Statement
+
+The project addresses binary diabetes-risk prediction under a strongly
+imbalanced class distribution. The objective is not simply high accuracy: the
+minority class must be detected with an explicit precision/recall trade-off,
+while repeated records, preprocessing, balancing, and threshold selection stay
+isolated from the final test estimate. PaRSEL+ extends the base workflow by
+testing stricter evaluation and decision-making procedures.
+
+### Base-Paper Limitations
+
+- The title says heart disease, while the primary data and target are diabetes.
+- Algorithm 16 presents dimensionality reduction before the split. This is
+	ambiguous and can allow test-derived transformation information; this project
+	fits reducers on training data only.
+- The approximately 91/9 test imbalance makes accuracy misleading and exposes
+	the paper's relatively weak reported recall.
+- Reported values are internally inconsistent, including recall around 67%
+	versus 70% and the Table 4 narrative claiming roughly 98% accuracy with 97%
+	recall.
+- The paper does not describe threshold optimization, probability calibration,
+	paired statistical testing, or confidence intervals.
+
 ## Methodology
 
 ### Phase 1: PaRSEL Baseline
@@ -23,6 +46,17 @@ The single isolated `smote-variants==1.0.1` wheel install completed with `--no-d
 ### Phase 2: PaRSEL+ Proposal
 
 PaRSEL+ is a planned extension, not yet an evaluated model. The ordered ablations are: E1 repeated-seed evaluation and paired significance; E2 validation-only threshold selection; E3 additional base learners and drop-one ablations; E4 meta-learner comparison; E5 class/cost weighting versus available oversampling; E6 probability calibration; E7 SHAP and subgroup metrics; E8 independent Pima validation. E9 is optional and will not be built before analytical validation.
+
+### Evaluation Methodology
+
+The pipeline removes nulls before splitting, caps continuous outliers using
+training-fitted 1.5-IQR bounds, encodes categories and scales numeric inputs
+using training data only, and keeps identical predictor tuples together in the
+primary split. Reducers and samplers are applied only after the split; samplers
+operate on training partitions, and PaRSEL meta-features are out-of-fold base
+predictions. The untouched test set is imbalanced and is used only for final
+evaluation. Reported metrics include precision, recall, F1, specificity,
+balanced accuracy, ROC-AUC, PR-AUC, and confusion counts.
 
 ## Baseline Reproduction vs. Paper
 
@@ -62,6 +96,21 @@ PaRSEL+ will only be described as an improvement if it outperforms the prespecif
 - The specialized sampler wheel could not import without `metric-learn`; those comparisons are unavailable under the no-retry rule.
 - The paper's title/target mismatch, inconsistent recall values, and incompletely specified split and runtime protocol limit numerical comparability.
 - The dataset is observational and its source/population/labeling process may introduce subgroup and geographic biases. It is not a clinical dataset for diagnosis.
+
+## Threats to Validity
+
+- Duplicate rows and repeated predictor combinations can make a row-wise split
+	optimistic; group-safe splitting is used as a control, but it differs from the
+	paper's unspecified protocol.
+- The test prevalence is about 8.5%, so accuracy and ROC-AUC can hide poor
+	minority precision; PR-AUC and class-specific metrics are necessary.
+- The paper's reducer ordering is ambiguous, and the project's train-only fit is
+	intentionally more conservative. This can lower measured numbers while
+	reducing leakage risk.
+- The LogitBoost-style surrogate is not canonical LogitBoost, and unavailable
+	specialized samplers cannot support configuration-matched claims.
+- A single held-out split is not enough to establish general superiority;
+	PaRSEL+ claims remain pending E1 confidence intervals and paired tests.
 
 ## Future Work
 

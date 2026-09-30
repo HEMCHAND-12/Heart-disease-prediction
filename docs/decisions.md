@@ -70,3 +70,12 @@ Discriminator: report mean, standard deviation, and 95% intervals across the fiv
 
 Hypothesis: selecting a threshold on a training-only validation fold can raise PaRSEL recall to at least 0.90, while lowering precision relative to its default-threshold held-out result.
 Discriminator: choose max-F1 and recall-constrained thresholds on the same validation predictions, then evaluate each exactly once on the untouched test set and record the precision/recall trade-off.
+
+## Handoff While E1 Runs (2026-09-30)
+
+- Added read-only `scripts/status.py` and `make status`; it reads process state and CSVs but never writes experiment results. Its E1 row estimate is one runtime-plan row plus 15 PaRSEL folds, 125 standalone folds, 48 metric summaries, and 5 paired held-out rows: 194 rows.
+- Added ignore patterns for future logs, per-run figures, prepared split CSVs, caches, and virtual environments. Existing tracked generated artifacts were not removed or rewritten.
+- Drafted the report problem statement, paper limitations, leakage-free methodology, and threats-to-validity sections without inventing PaRSEL+ numbers.
+- Added unlaunched E4-E8 helper code and synthetic unit tests. These helpers do not write `extension_results.csv` until a future explicit runner invokes them with extension run keys.
+- Added an untrained Streamlit shell in `app.py`. It refuses prediction until a separately validated pipeline and frozen threshold are saved; it displays an educational-use-only/non-diagnosis notice.
+- E1 remains the only active experiment writer. E2 and Phase 1 queue resumption remain intentionally blocked until E1 finishes and is checked with `make status`.
