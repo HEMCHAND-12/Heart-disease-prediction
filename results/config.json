@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-09-30T10:34:15+00:00",
+  "created_utc": "2026-09-30T11:14:40+00:00",
   "seed": 42,
   "target": "diabetes",
   "features": [
@@ -100,7 +100,12 @@
     "matplotlib": "3.11.2",
     "shap": "0.52.0"
   },
-  "specialized_sampler_status": {},
+  "specialized_sampler_status": {
+    "ProWRAS": "unavailable (smote-variants import failed: metric-learn missing)",
+    "LoRAS": "unavailable (smote-variants import failed: metric-learn missing)",
+    "MWMOTE": "unavailable (smote-variants import failed: metric-learn missing)",
+    "RWOS": "unavailable (smote-variants import failed: metric-learn missing)"
+  },
   "sampler_install_attempt": {
     "package": "smote-variants==1.0.1",
     "environment": ".venv/sampler-install",
@@ -122,6 +127,11 @@
         "0": 18301,
         "1": 1700
       },
+      "ros_train_counts": {
+        "0": 73199,
+        "1": 73199
+      },
+      "ros_train_rows": 146398,
       "test_prevalence": 0.08499575021248938,
       "files": {
         "train": "splits/paper_faithful_train.csv",

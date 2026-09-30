@@ -46,3 +46,27 @@ Updated: 2026-09-30
 - First successful Phase 1 primary run (paper-faithful, ROS, no reducer, untuned PaRSEL): accuracy 0.9544, precision 0.7472, recall 0.7006, F1 0.7231, specificity 0.97798, balanced accuracy 0.8393, ROC-AUC 0.9607, PR-AUC 0.6470. This does not reproduce the paper's approximate 97% accuracy / 80% F1 or 98% ROC-AUC claims; do not tune against the test set to close the gap.
 - Direct ROS verification on paper-faithful training labels: pre-ROS counts {0: 73,199, 1: 6,800}; post-ROS counts {0: 73,199, 1: 73,199}; 146,398 rows. This is nine examples per class below the paper's 73,208 due to the group-safe split allocation.
 - Train-only randomized-search Phase 1 variant completed after three candidate draws (3-fold CV; same untouched test): learning_rate=0.1, max_depth=7, n_estimators=152; accuracy 0.9636, precision 0.8495, recall 0.6941, F1 0.7640, ROC-AUC 0.9713, PR-AUC 0.8458. Its ROS/no-reducer configuration differs from the paper's ProWRAS+LDA Table 4 tuned narrative, so this comparison is not configuration-matched. Keep the untuned model as the primary baseline.
+
+## LDA Diagnostic Hypothesis (before run)
+
+Hypothesis: binary LDA is producing the expected one-dimensional, finite projection; the observed ROS+LDA loss is due to information compression and/or the fitted class prior, not a malformed input shape.
+Discriminator: inspect train/test shape and NaNs, then compare the five standalone learners using LDA fitted on imbalanced training data versus LDA fitted on ROS-balanced training data, with the same untouched test rows.
+
+LDA diagnostic outcome: scaled, train-fitted preprocessing produced 79,999 x 8 training and 20,001 x 8 test inputs; both contained no NaNs. Binary LDA produced exactly 79,999 x 1 and 20,001 x 1 finite arrays. Standalone mean F1 across PAC/Ridge/SGD/XGBoost/LogitBoost surrogate was 0.530 with LDA fitted on imbalanced train and 0.564 when LDA was fitted on ROS-balanced train; mean ROC-AUC was 0.949 and 0.955 respectively. Individual LDA standalone F1 ranged 0.413-0.579 (imbalanced prior) and 0.545-0.577 (balanced prior), versus no-reduction standalone F1 0.505-0.678. Shape/scaling/NaN handling is correct. The LDA collapse is consistent with genuine one-component information compression, with class prior contributing; the larger PaRSEL drop to F1 0.492 may additionally reflect stack score/meta-threshold behavior and needs E2 calibration/threshold analysis.
+
+## RFE Runtime Decision (before rerun)
+
+Hypothesis: one training-only CV selection of RFE feature count, followed by fold-local Random Forest RFE using that fixed count, will finish within the run budget without changing test evaluation.
+Discriminator: rerun ROS+RFE once with the selected count and selected feature names saved in reducer_metadata; compare only on the fixed untouched test and label this count-selection compromise.
+
+- Compromise: select `n_features` once by 3-fold average-precision CV on the training split, then reuse that fixed count inside OOF folds and the final train fit. Random Forest RFE remains fit only on each relevant training partition, with at most 100 trees. This is faster than independently selecting feature count inside every OOF fold, but the count selection sees the full training labels; the untouched test remains isolated.
+
+## PaRSEL+ E1 Hypothesis (before run)
+
+Hypothesis: repeated five-fold CV over five fixed seeds will show that the primary PaRSEL baseline's apparent high accuracy coexists with materially weaker minority-class precision/PR-AUC than ranking metrics alone suggest.
+Discriminator: report mean, standard deviation, and 95% intervals across the five-seed CV for fixed standalone alternatives, and compare paired test-set predictions/scores to the saved PaRSEL baseline with McNemar and DeLong tests.
+
+## PaRSEL+ E2 Hypothesis (before run)
+
+Hypothesis: selecting a threshold on a training-only validation fold can raise PaRSEL recall to at least 0.90, while lowering precision relative to its default-threshold held-out result.
+Discriminator: choose max-F1 and recall-constrained thresholds on the same validation predictions, then evaluate each exactly once on the untouched test set and record the precision/recall trade-off.
