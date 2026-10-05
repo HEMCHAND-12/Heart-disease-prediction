@@ -125,6 +125,30 @@ The append-only E1 file contains 194 rows: one runtime-plan row, 140 CV-fold
 rows, 48 metric summaries, and five paired held-out rows. There are no duplicate
 run keys and all executable rows completed successfully.
 
+### E2 Threshold Operating Points
+
+E2 selected thresholds on a group-safe validation partition cut from the
+training split only. The selected thresholds were then frozen and evaluated
+once on the untouched 20,001-row test set. The default row below was recomputed
+from the cached test scores without refitting.
+
+| Operating point | Frozen threshold | Precision | Recall | F1 | Specificity | Balanced accuracy | Confusion matrix [TN, FP, FN, TP] |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Default baseline | 0.500000 | 74.72% | 70.06% | 72.31% | 97.80% | 83.93% | [17,898, 403, 509, 1,191] |
+| Validation max-F1 | 0.613937 | 76.46% | 68.76% | 72.41% | 98.03% | 83.40% | [17,941, 360, 531, 1,169] |
+| Validation recall >= 0.90 | 0.081557 | 46.49% | 88.88% | 61.05% | 90.50% | 89.69% | [16,562, 1,739, 189, 1,511] |
+
+Max-F1 thresholding produced no meaningful gain over the 72.31% baseline F1:
+it reached 72.41% while recall fell from 70.06% to 68.76%. The recall-target
+variant improved recall by 18.82 percentage points but reduced precision by
+28.23 points and F1 by 11.26 points. It generated 1,336 additional false
+alarms for 320 additional true positives, about 4.2 false alarms per additional
+case caught. The validation target of 0.90 recall was not fully preserved on the
+test set (88.88%). These are operating-point trade-offs, not an overall model
+improvement. Because ROS changes the training class prior and the probabilities
+are uncalibrated, the best-F1 threshold being 0.61 should not be interpreted as
+a calibrated risk probability; calibration is a later PaRSEL+ stage.
+
 ## Limitations
 
 - The source contains 3,854 exact duplicate rows and repeated predictor combinations with conflicting labels. The primary variant retains all rows but groups identical predictors to prevent train/test contamination; deduplicated and predictor-grouped results remain separate.

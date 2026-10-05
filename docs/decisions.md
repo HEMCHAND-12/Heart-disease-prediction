@@ -79,3 +79,8 @@ Discriminator: choose max-F1 and recall-constrained thresholds on the same valid
 - Added unlaunched E4-E8 helper code and synthetic unit tests. These helpers do not write `extension_results.csv` until a future explicit runner invokes them with extension run keys.
 - Added an untrained Streamlit shell in `app.py`. It refuses prediction until a separately validated pipeline and frozen threshold are saved; it displays an educational-use-only/non-diagnosis notice.
 - E1 remains the only active experiment writer. E2 and Phase 1 queue resumption remain intentionally blocked until E1 finishes and is checked with `make status`.
+
+## E2 Outcome (2026-10-05)
+
+- E2 selected thresholds on a group-safe validation partition from training only and evaluated once on the untouched test. Default 0.5: precision 0.7472, recall 0.7006, F1 0.7231, specificity 0.9780, balanced accuracy 0.8393, [TN, FP, FN, TP] = [17,898, 403, 509, 1,191]. Max-F1 threshold 0.613937: precision 0.7646, recall 0.6876, F1 0.7241, specificity 0.9803, balanced accuracy 0.8340, [17,941, 360, 531, 1,169]. Recall-target threshold 0.081557: precision 0.4649, recall 0.8888, F1 0.6105, specificity 0.9050, balanced accuracy 0.8969, [16,562, 1,739, 189, 1,511].
+- Max-F1 gave no meaningful gain. The recall-target variant is a precision/recall trade-off, with about 4.2 additional false alarms per additional true positive; its validation recall target was not fully preserved on test. ROS-inflated, uncalibrated scores explain why the max-F1 threshold is 0.61 rather than a calibrated probability.
