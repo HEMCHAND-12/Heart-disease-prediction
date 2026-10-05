@@ -22,6 +22,7 @@ results/e2.pid
 results/extension_results.csv
 results/figure_*.png
 results/roc_curve.png
+results/e4_cache/
 results/pr_curve.png
 splits/*.csv
 images/

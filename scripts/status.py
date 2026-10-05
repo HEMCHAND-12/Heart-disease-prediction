@@ -23,7 +23,10 @@ def _process_rows() -> list[dict[str, str]]:
     rows = []
     for line in output.splitlines():
         parts = line.strip().split(None, 3)
-        if len(parts) == 4 and ("scripts.proposed_model" in parts[3] or "scripts.run_experiments" in parts[3]):
+        if len(parts) == 4 and any(
+            marker in parts[3]
+            for marker in ("scripts.proposed_model", "scripts.run_experiments", "scripts.run_e4")
+        ):
             rows.append({"pid": parts[0], "elapsed": parts[1], "cpu": parts[2], "cmd": parts[3]})
     return rows
 

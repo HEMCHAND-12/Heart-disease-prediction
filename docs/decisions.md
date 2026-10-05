@@ -80,6 +80,14 @@ Discriminator: choose max-F1 and recall-constrained thresholds on the same valid
 - Added an untrained Streamlit shell in `app.py`. It refuses prediction until a separately validated pipeline and frozen threshold are saved; it displays an educational-use-only/non-diagnosis notice.
 - E1 remains the only active experiment writer. E2 and Phase 1 queue resumption remain intentionally blocked until E1 finishes and is checked with `make status`.
 
+## E4 Outcome (2026-10-05)
+
+- E4 completed with three shared base-OOF caches, nine CV meta rows (three seeds x three meta-learners), and three fixed-test paired rows. No base model was refit separately for each meta learner.
+- LogitBoost-style CV mean F1 was 0.8067 and held-out p-values versus baseline were McNemar 9.60e-40 / DeLong 6.49e-37. It improved precision/F1/ranking but reduced recall, so the verdict is mixed, not universal improvement.
+- Logistic regression CV mean F1 was 0.7908 and held-out p-values were McNemar 1.13e-19 / DeLong 7.45e-35. It improved all listed held-out metrics versus the baseline in this fixed split; this is an E4 result, not a clinical superiority claim.
+- Weighted average CV mean F1 was 0.7314 and held-out p-values were McNemar 0.330 / DeLong 0.457. Verdict: no significant difference; no improvement claim.
+- The paired baseline is the unchanged `phase1:paper_faithful:ROS:none:PaRSEL:42` run, seed 42, ROS, no reduction, 79,999/20,001 split, with its saved 20,001 predictions.
+
 ## E2 Outcome (2026-10-05)
 
 - E2 selected thresholds on a group-safe validation partition from training only and evaluated once on the untouched test. Default 0.5: precision 0.7472, recall 0.7006, F1 0.7231, specificity 0.9780, balanced accuracy 0.8393, [TN, FP, FN, TP] = [17,898, 403, 509, 1,191]. Max-F1 threshold 0.613937: precision 0.7646, recall 0.6876, F1 0.7241, specificity 0.9803, balanced accuracy 0.8340, [17,941, 360, 531, 1,169]. Recall-target threshold 0.081557: precision 0.4649, recall 0.8888, F1 0.6105, specificity 0.9050, balanced accuracy 0.8969, [16,562, 1,739, 189, 1,511].

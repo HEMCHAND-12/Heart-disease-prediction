@@ -125,6 +125,31 @@ The append-only E1 file contains 194 rows: one runtime-plan row, 140 CV-fold
 rows, 48 metric summaries, and five paired held-out rows. There are no duplicate
 run keys and all executable rows completed successfully.
 
+### E4 Meta-Learner Comparison
+
+E4 reused shared out-of-fold base predictions, so the three meta-learners did
+not refit the base layer separately. It used three seeds with five folds per
+seed. The intervals below are 95% t-based CIs across the three seed-level
+results and are the primary E4 evidence. The held-out comparison uses one
+fixed untouched test split, exactly the same ROS/no-reduction PaRSEL baseline
+run used in E1.
+
+| Meta-learner | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC |
+|---|---|---|---|---|---|---|
+| LogitBoost-style | 0.9718 +/- 0.0002 [0.9712, 0.9723] | 0.9641 +/- 0.0028 [0.9570, 0.9712] | 0.6935 +/- 0.0023 [0.6877, 0.6993] | 0.8067 +/- 0.0017 [0.8025, 0.8110] | 0.9813 +/- 0.0004 [0.9802, 0.9824] | 0.8931 +/- 0.0033 [0.8849, 0.9012] |
+| Logistic regression | 0.9665 +/- 0.0001 [0.9662, 0.9669] | 0.8442 +/- 0.0010 [0.8417, 0.8467] | 0.7437 +/- 0.0006 [0.7422, 0.7451] | 0.7908 +/- 0.0007 [0.7889, 0.7926] | 0.9775 +/- 0.0001 [0.9773, 0.9776] | 0.8799 +/- 0.0002 [0.8795, 0.8803] |
+| Weighted average | 0.9548 +/- 0.0001 [0.9545, 0.9551] | 0.7391 +/- 0.0019 [0.7345, 0.7437] | 0.7240 +/- 0.0018 [0.7195, 0.7285] | 0.7314 +/- 0.0002 [0.7310, 0.7319] | 0.9665 +/- 0.0000 [0.9664, 0.9666] | 0.8254 +/- 0.0000 [0.8253, 0.8255] |
+
+| Meta-learner | McNemar p | DeLong p | Verdict vs. PaRSEL baseline |
+|---|---:|---:|---|
+| LogitBoost-style | 9.60e-40 | 6.49e-37 | Mixed: better accuracy, precision, F1, ROC-AUC and PR-AUC, but worse recall; no universal improvement claim |
+| Logistic regression | 1.13e-19 | 7.45e-35 | Better on the measured held-out accuracy, precision, recall, F1, ROC-AUC and PR-AUC; both paired tests are significant |
+| Weighted average | 0.330 | 0.457 | No significant difference by either paired test; no improvement claim |
+
+The held-out test comparison is a single fixed split; the cross-validated
+intervals above are the primary evidence for E4 stability. No E4 improvement is
+claimed where a paired p-value is at least 0.05.
+
 ### E2 Threshold Operating Points
 
 E2 selected thresholds on a group-safe validation partition cut from the
