@@ -88,6 +88,12 @@ Discriminator: choose max-F1 and recall-constrained thresholds on the same valid
 - Weighted average CV mean F1 was 0.7314 and held-out p-values were McNemar 0.330 / DeLong 0.457. Verdict: no significant difference; no improvement claim.
 - The paired baseline is the unchanged `phase1:paper_faithful:ROS:none:PaRSEL:42` run, seed 42, ROS, no reduction, 79,999/20,001 split, with its saved 20,001 predictions.
 
+## E5 Outcome (2026-10-05)
+
+- E5 completed 33 rows: 9 shared strategy/seed OOF base caches, 18 CV rows (3 strategies x 2 meta-learners x 3 seeds), and 6 paired held-out rows. All statuses are `ok`; keys are unique.
+- Class-weight LogitBoost-style achieved CV F1 0.8080 +/- 0.0018; its held-out F1 was 0.7814 with recall 0.6665. Class-weight logistic regression achieved CV F1 0.7908 +/- 0.0007; held-out F1 was 0.7801 with recall 0.7294.
+- ROS and SMOTE comparisons are in `docs/final_report.md`. Results are mixed by metric and operating point; do not claim a universal best balancing strategy. Paired held-out p-values are significant for these configurations, but those tests do not remove single-split uncertainty.
+
 ## E2 Outcome (2026-10-05)
 
 - E2 selected thresholds on a group-safe validation partition from training only and evaluated once on the untouched test. Default 0.5: precision 0.7472, recall 0.7006, F1 0.7231, specificity 0.9780, balanced accuracy 0.8393, [TN, FP, FN, TP] = [17,898, 403, 509, 1,191]. Max-F1 threshold 0.613937: precision 0.7646, recall 0.6876, F1 0.7241, specificity 0.9803, balanced accuracy 0.8340, [17,941, 360, 531, 1,169]. Recall-target threshold 0.081557: precision 0.4649, recall 0.8888, F1 0.6105, specificity 0.9050, balanced accuracy 0.8969, [16,562, 1,739, 189, 1,511].

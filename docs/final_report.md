@@ -150,6 +150,37 @@ The held-out test comparison is a single fixed split; the cross-validated
 intervals above are the primary evidence for E4 stability. No E4 improvement is
 claimed where a paired p-value is at least 0.05.
 
+### E5 Imbalance Handling
+
+E5 compared class weighting, ROS, and SMOTE with both the LogitBoost-style and
+logistic-regression meta-learners. Resampling occurred inside each training CV
+fold only. Three seeds and five folds were used per configuration; intervals
+are 95% t-based CIs across seed-level metric means. Paired tests use the same
+single untouched test split and Phase 1 PaRSEL baseline predictions.
+
+| Strategy / meta-learner | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC |
+|---|---|---|---|---|---|---|
+| Class weight / LogitBoost-style | 0.9719 +/- 0.0002 [0.9714, 0.9725] | 0.9653 +/- 0.0016 [0.9613, 0.9694] | 0.6948 +/- 0.0028 [0.6879, 0.7016] | 0.8080 +/- 0.0018 [0.8036, 0.8124] | 0.9812 +/- 0.0001 [0.9809, 0.9816] | 0.8950 +/- 0.0010 [0.8925, 0.8975] |
+| Class weight / Logistic regression | 0.9666 +/- 0.0001 [0.9663, 0.9668] | 0.8443 +/- 0.0011 [0.8416, 0.8470] | 0.7437 +/- 0.0006 [0.7421, 0.7453] | 0.7908 +/- 0.0007 [0.7892, 0.7925] | 0.9776 +/- 0.0001 [0.9775, 0.9777] | 0.8804 +/- 0.0003 [0.8797, 0.8811] |
+| ROS / LogitBoost-style | 0.9718 +/- 0.0002 [0.9712, 0.9723] | 0.9641 +/- 0.0028 [0.9570, 0.9712] | 0.6935 +/- 0.0023 [0.6877, 0.6993] | 0.8067 +/- 0.0017 [0.8025, 0.8110] | 0.9813 +/- 0.0004 [0.9802, 0.9824] | 0.8931 +/- 0.0033 [0.8849, 0.9012] |
+| ROS / Logistic regression | 0.9665 +/- 0.0001 [0.9662, 0.9669] | 0.8442 +/- 0.0010 [0.8417, 0.8467] | 0.7437 +/- 0.0006 [0.7422, 0.7451] | 0.7908 +/- 0.0007 [0.7889, 0.7926] | 0.9775 +/- 0.0001 [0.9773, 0.9776] | 0.8799 +/- 0.0002 [0.8795, 0.8803] |
+| SMOTE / LogitBoost-style | 0.9729 +/- 0.0001 [0.9727, 0.9731] | 0.9881 +/- 0.0014 [0.9846, 0.9917] | 0.6895 +/- 0.0021 [0.6842, 0.6948] | 0.8122 +/- 0.0010 [0.8097, 0.8147] | 0.9790 +/- 0.0001 [0.9787, 0.9793] | 0.8892 +/- 0.0009 [0.8871, 0.8913] |
+| SMOTE / Logistic regression | 0.9702 +/- 0.0003 [0.9694, 0.9710] | 0.9227 +/- 0.0038 [0.9134, 0.9321] | 0.7088 +/- 0.0006 [0.7074, 0.7102] | 0.8017 +/- 0.0017 [0.7974, 0.8060] | 0.9754 +/- 0.0001 [0.9751, 0.9757] | 0.8770 +/- 0.0002 [0.8765, 0.8774] |
+
+| Strategy / meta-learner | Test precision | Test recall | Test F1 | McNemar p | DeLong p | Verdict vs. baseline |
+|---|---:|---:|---:|---:|---:|---|
+| Class weight / LogitBoost-style | 94.42% | 66.65% | 78.14% | 1.57e-38 | 3.29e-35 | Mixed: higher precision/F1 and ranking, lower recall |
+| Class weight / Logistic regression | 83.84% | 72.94% | 78.01% | 1.10e-19 | 4.32e-35 | Better on measured accuracy, precision, recall, F1 and ranking; significant paired differences |
+| ROS / LogitBoost-style | 94.70% | 66.24% | 77.95% | 9.60e-40 | 6.49e-37 | Mixed: higher precision/F1 and ranking, lower recall |
+| ROS / Logistic regression | 83.48% | 72.82% | 77.79% | 1.13e-19 | 7.45e-35 | Better on measured accuracy, precision, recall, F1 and ranking; significant paired differences |
+| SMOTE / LogitBoost-style | 97.66% | 66.35% | 79.02% | 1.37e-45 | 3.06e-17 | Mixed: higher precision/F1, lower recall; ROC-AUC/PR-AUC lower than baseline |
+| SMOTE / Logistic regression | 90.55% | 69.35% | 78.55% | 9.71e-33 | 2.31e-18 | Mixed: higher F1 and PR-AUC, lower recall and ROC-AUC |
+
+All paired tests here have p < 0.05, but conclusions remain metric-specific;
+statistical significance does not make a strategy universally superior. The
+CV intervals are the primary stability evidence, while the held-out comparison
+uses a single fixed test split.
+
 ### E2 Threshold Operating Points
 
 E2 selected thresholds on a group-safe validation partition cut from the
