@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-09-30T11:47:40+00:00",
+  "created_utc": "2026-10-05T06:36:59+00:00",
   "seed": 42,
   "target": "diabetes",
   "features": [
@@ -19,7 +19,7 @@
   "outlier_policy": "Train-fitted 1.5-IQR winsorization for continuous columns; bounds reused for validation/test.",
   "encoding": "OrdinalEncoder fitted on train; unknown categories map to -1.",
   "scaling": "StandardScaler fitted on training data for linear models and reducers; XGBoost uses unscaled data.",
-  "reduction_settings": "RFE uses RandomForest and train-only 3-fold AP selection over 4/6/8 features; LDA uses one component; FA uses min(4, input_features) components.",
+  "reduction_settings": "RFE uses RandomForest and train-only 3-fold AP selection over 4/6/8 features; LDA uses one component; standard FA uses min(4, input_features) components; the Phase 1 standalone ROS FA check uses 2, 4, and 6 components.",
   "stratified_split": {
     "type": "80/20 stratified split after exact deduplication",
     "train_rows": 76916,

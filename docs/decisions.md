@@ -60,6 +60,8 @@ Hypothesis: one training-only CV selection of RFE feature count, followed by fol
 Discriminator: rerun ROS+RFE once with the selected count and selected feature names saved in reducer_metadata; compare only on the fixed untouched test and label this count-selection compromise.
 
 - Compromise: select `n_features` once by 3-fold average-precision CV on the training split, then reuse that fixed count inside OOF folds and the final train fit. Random Forest RFE remains fit only on each relevant training partition, with at most 100 trees. This is faster than independently selecting feature count inside every OOF fold, but the count selection sees the full training labels; the untouched test remains isolated.
+- RFE implementation correction: the first fixed-count rerun passed a zero-row validation frame into the imputer and failed. The corrected path fits the train-only preprocessor and transforms one actual training row to establish the input shape, then selects count by train-only CV. Failed `rfe_fixedn_v2` rows are preserved; corrected attempts use `rfe_fixedn_v3` keys.
+- Factor Analysis runtime deviation: the primary ROS+FA PaRSEL configuration continued beyond 10 minutes without checkpointing, so it was terminated and recorded as failed/interrupted (`phase1:paper_faithful:ROS:FA:PaRSEL:42`). The alarm did not preempt the long-running native operation. No result is inferred for that configuration.
 
 ## PaRSEL+ E1 Hypothesis (before run)
 

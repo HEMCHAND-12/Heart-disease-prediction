@@ -7,10 +7,8 @@ import csv
 import importlib
 import json
 import platform
-import signal
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
@@ -18,6 +16,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scripts.hard_timeout import ExperimentTimeout, failure_reason, run_with_hard_timeout
 from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE, RandomOverSampler
 from scipy.stats import randint
 from sklearn.compose import ColumnTransformer
@@ -90,20 +89,6 @@ class TrainWinsorizer:
 
 def now_utc() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-@contextmanager
-def experiment_timeout(seconds: int = 600):
-    def timeout_handler(*_: Any) -> None:
-        raise TimeoutError(f"experiment exceeded {seconds} seconds")
-
-    previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def version(package: str) -> str:
@@ -367,7 +352,7 @@ def fit_parsel(
     fit_time = 0.0
     selected_rfe_count = rfe_count
     if reducer_name == "RFE" and selected_rfe_count is None:
-        x_for_selection, _, _, _ = transform_pair(train, train.iloc[:0], "none", scale=True)
+        x_for_selection, _, _, _ = transform_pair(train, train.iloc[[0]], "none", scale=True)
         selected_rfe_count = select_rfe_count(x_for_selection, y)
     for fit_idx, valid_idx in folds.split(train[FEATURES], y):
         fold_start = time.perf_counter()
@@ -427,6 +412,36 @@ def fit_parsel(
     scores = model_scores(meta, meta_test)
     predict_time = time.perf_counter() - start
     return predicted, scores, fit_time, predict_time, best_params, reducer_metadata
+
+
+def _fit_phase1_model(
+    train: pd.DataFrame, test: pd.DataFrame, name: str, reducer: str,
+    sampler: str, tuned: bool, selected_rfe_count: int | None,
+):
+    """Fit and score one Phase 1 configuration inside a killable child."""
+    if name == "PaRSEL":
+        predicted, scores, fit_s, pred_s, params, metadata = fit_parsel(
+            train, test, reducer, sampler, tuned, selected_rfe_count
+        )
+        metadata["tuned_hyperparameters"] = params
+        rfe_features = metadata.get("n_features", "")
+    else:
+        scale = name != "XGBoost" or reducer != "none"
+        x_train, x_test, rfe_count, _ = transform_pair(
+            train, test, reducer, scale=scale, rfe_count=selected_rfe_count
+        )
+        rfe_features = rfe_count or ""
+        started = time.perf_counter()
+        x_balanced, y_balanced = make_sampler(sampler).fit_resample(x_train, train[TARGET])
+        model = make_model(name)
+        model.fit(x_balanced, y_balanced)
+        fit_s = time.perf_counter() - started
+        started = time.perf_counter()
+        scores = model_scores(model, x_test)
+        predicted = model.predict(x_test)
+        pred_s = time.perf_counter() - started
+        params, metadata = {}, {}
+    return predicted, scores, fit_s, pred_s, params, metadata, rfe_features
 
 
 def append_record(record: dict[str, Any]) -> None:
@@ -497,7 +512,7 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
     except Exception as error:  # noqa: BLE001
         for name in models:
             model_variant = "tuned" if name == "PaRSEL_tuned" else "paper_parameters"
-            rfe_version = ":rfe_fixedn_v2" if reducer == "RFE" else ""
+            rfe_version = ":rfe_fixedn_v3" if reducer == "RFE" else ""
             run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}{rfe_version}"
             if run_key in finished:
                 continue
@@ -518,9 +533,10 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
             if dataset_variant in RFE_SELECTION_CACHE:
                 selected_rfe_count = RFE_SELECTION_CACHE[dataset_variant]
             else:
-                with experiment_timeout():
-                    x_for_selection, _, _, _ = transform_pair(train, train.iloc[:0], "none", scale=True)
-                    selected_rfe_count = select_rfe_count(x_for_selection, train[TARGET])
+                def _select_count():
+                    x_for_selection, _, _, _ = transform_pair(train, train.iloc[[0]], "none", scale=True)
+                    return select_rfe_count(x_for_selection, train[TARGET])
+                selected_rfe_count = run_with_hard_timeout(_select_count, timeout_seconds=600)
                 RFE_SELECTION_CACHE[dataset_variant] = selected_rfe_count
         except Exception as error:  # noqa: BLE001
             for name in models:
@@ -528,11 +544,11 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
                 append_record({
                     **base,
                     "run_id": uuid.uuid4().hex[:12],
-                    "run_key": f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}:rfe_fixedn_v2",
+                    "run_key": f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}:rfe_fixedn_v3",
                     "model": "PaRSEL" if name == "PaRSEL_tuned" else name,
                     "model_variant": "tuned" if name == "PaRSEL_tuned" else "paper_parameters",
                     "status": "failed",
-                    "error": f"RFE count selection failed: {type(error).__name__}: {error}",
+                    "error": f"RFE count selection failed: {failure_reason(error)}",
                     "rfe_features": "",
                     "tuned_parameters": "",
                     "reducer_metadata": json.dumps({"reducer": "RFE", "fit_status": "selection_failed"}) if is_parsel else "",
@@ -540,7 +556,7 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
             return
     try:
         for name in models:
-            rfe_version = ":rfe_fixedn_v2" if reducer == "RFE" else ""
+            rfe_version = ":rfe_fixedn_v3" if reducer == "RFE" else ""
             run_key = f"phase1:{dataset_variant}:{sampler}:{reducer}:{name}:{SEED}{rfe_version}"
             if run_key in finished:
                 continue
@@ -550,28 +566,19 @@ def run_combination(train: pd.DataFrame, test: pd.DataFrame, split: str, dataset
             planned_metadata = {"reducer": reducer, "fit_status": "not_completed"}
             record = {**base, "run_id": run_id, "run_key": run_key, "model": model_name, "model_variant": "tuned" if tuned else "paper_parameters", "status": "ok", "error": "", "rfe_features": "", "tuned_parameters": "", "reducer_metadata": json.dumps(planned_metadata) if model_name == "PaRSEL" else ""}
             try:
-                with experiment_timeout():
-                    if model_name == "PaRSEL":
-                        predicted, scores, fit_s, pred_s, params, reducer_metadata = fit_parsel(
-                            train, test, reducer, sampler, tuned, selected_rfe_count
-                        )
-                        reducer_metadata["tuned_hyperparameters"] = params
-                        record["reducer_metadata"] = json.dumps(reducer_metadata, sort_keys=True)
-                        record["rfe_features"] = reducer_metadata.get("n_features", "")
-                    else:
-                        scale = name != "XGBoost" or reducer != "none"
-                        x_train, x_test, rfe_count, _ = transform_pair(
-                            train, test, reducer, scale=scale, rfe_count=selected_rfe_count
-                        )
-                        record["rfe_features"] = rfe_count or ""
-                        start = time.perf_counter()
-                        x_bal, y_bal = make_sampler(sampler).fit_resample(x_train, train[TARGET])
-                        model = make_model(name); model.fit(x_bal, y_bal); fit_s = time.perf_counter() - start
-                        start = time.perf_counter(); scores = model_scores(model, x_test); predicted = model.predict(x_test); pred_s = time.perf_counter() - start; params = {}
+                predicted, scores, fit_s, pred_s, params, reducer_metadata, rfe_features = run_with_hard_timeout(
+                    _fit_phase1_model, train, test, model_name, reducer, sampler, tuned,
+                    selected_rfe_count, timeout_seconds=600,
+                )
+                if model_name == "PaRSEL":
+                    record["reducer_metadata"] = json.dumps(reducer_metadata, sort_keys=True)
+                record["rfe_features"] = rfe_features
                 record.update(metrics(test[TARGET], predicted, scores, fit_s, pred_s)); record["tuned_parameters"] = json.dumps(params, sort_keys=True)
                 if model_name == "PaRSEL" and not tuned:
                     curve = pd.DataFrame({"target": test[TARGET].to_numpy(), "score": scores, "prediction": predicted})
                     curve.to_csv(RESULTS / f"curve_{run_id}.csv", index=False)
+            except ExperimentTimeout as error:
+                record.update({"status": "failed", "error": f"timeout: {error}"})
             except Exception as error:  # noqa: BLE001
                 record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
             append_record(record)

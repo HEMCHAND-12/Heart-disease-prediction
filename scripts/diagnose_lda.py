@@ -16,7 +16,6 @@ from scripts.run_experiments import (
     TARGET,
     append_record,
     completed_run_keys,
-    experiment_timeout,
     make_model,
     make_sampler,
     metrics,
@@ -24,8 +23,23 @@ from scripts.run_experiments import (
     now_utc,
     transform_pair,
 )
+from scripts.hard_timeout import failure_reason, run_with_hard_timeout
 
 MODELS = ["PAC", "Ridge", "SGD", "XGBoost", "LogitBoost_surrogate"]
+
+
+def _fit_diagnostic_model(x_train, y_train, x_test, model_name):
+    started = time.perf_counter()
+    x_fit, y_fit = make_sampler("ROS").fit_resample(x_train, y_train)
+    fit_seconds = time.perf_counter() - started
+    model = make_model(model_name)
+    started = time.perf_counter()
+    model.fit(x_fit, y_fit)
+    fit_seconds += time.perf_counter() - started
+    started = time.perf_counter()
+    predictions = model.predict(x_test)
+    scores = model_scores(model, x_test)
+    return predictions, scores, fit_seconds, time.perf_counter() - started
 
 
 def main() -> None:
@@ -100,22 +114,14 @@ def main() -> None:
                 "decision_threshold": 0.5,
             }
             try:
-                with experiment_timeout():
-                    started = time.perf_counter()
-                    x_fit, y_fit = make_sampler("ROS").fit_resample(x_train_lda, train[TARGET])
-                    fit_seconds = time.perf_counter() - started
-                    model = make_model(model_name)
-                    started = time.perf_counter()
-                    model.fit(x_fit, y_fit)
-                    fit_seconds += time.perf_counter() - started
-                    started = time.perf_counter()
-                    predictions = model.predict(x_test_lda)
-                    scores = model_scores(model, x_test_lda)
-                    predict_seconds = time.perf_counter() - started
+                predictions, scores, fit_seconds, predict_seconds = run_with_hard_timeout(
+                    _fit_diagnostic_model, x_train_lda, train[TARGET], x_test_lda,
+                    model_name, timeout_seconds=600,
+                )
                 record.update(metrics(test[TARGET], predictions, scores, fit_seconds, predict_seconds))
                 record["brier_score"] = ""
             except Exception as error:  # noqa: BLE001
-                record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+                record.update({"status": "failed", "error": failure_reason(error)})
             append_record(record)
             print(f"completed {prior_name} / {model_name}")
 

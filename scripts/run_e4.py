@@ -21,13 +21,13 @@ from scripts.run_experiments import (
     RESULTS,
     SEED,
     TARGET,
-    experiment_timeout,
     make_model,
     make_sampler,
     metrics,
     model_scores,
     transform_pair,
 )
+from scripts.hard_timeout import failure_reason, run_with_hard_timeout
 
 CACHE_DIR = RESULTS / "e4_cache"
 BASE_MODELS = ("PAC", "Ridge", "SGD", "XGBoost")
@@ -97,8 +97,7 @@ def run() -> None:
     caches = {}
     for seed in SEEDS:
         cache_key = f"E4:cache:seed{seed}"
-        with experiment_timeout():
-            cache = _build_cache(seed, train, test)
+        cache = run_with_hard_timeout(_build_cache, seed, train, test, timeout_seconds=600)
         caches[seed] = cache
         if cache_key not in finished:
             _append_extension(_default_record("E4", cache_key, record_type="base_oof_cache", seed=seed, model="PaRSEL_base_layer", model_variant="shared_cache", sampler="ROS", status="ok"))
@@ -111,13 +110,12 @@ def run() -> None:
                 continue
             record = _default_record("E4", run_key, record_type="cv_summary", seed=seed, model=meta_name, model_variant="shared_oof_base_scores", sampler="ROS")
             try:
-                with experiment_timeout():
-                    # OOF base scores are cached; no base model is refit per meta learner.
-                    scores = _meta_scores(meta_name, oof, target, oof)
-                    predictions = (scores >= 0.5).astype(int)
+                # OOF base scores are cached; no base model is refit per meta learner.
+                scores = run_with_hard_timeout(_meta_scores, meta_name, oof, target, oof, timeout_seconds=600)
+                predictions = (scores >= 0.5).astype(int)
                 record.update(metrics(pd.Series(target), predictions, scores, 0.0, 0.0))
             except Exception as error:  # noqa: BLE001
-                record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+                record.update({"status": "failed", "error": failure_reason(error)})
             _append_extension(record)
             finished.add(run_key)
 
@@ -140,14 +138,13 @@ def run() -> None:
             continue
         record = _default_record("E4", run_key, record_type="paired_test", model=meta_name, model_variant="shared_final_base_scores", sampler="ROS")
         try:
-            with experiment_timeout():
-                scores = _meta_scores(meta_name, oof, target, test_meta)
-                predictions = (scores >= 0.5).astype(int)
+            scores = run_with_hard_timeout(_meta_scores, meta_name, oof, target, test_meta, timeout_seconds=600)
+            predictions = (scores >= 0.5).astype(int)
             record.update(metrics(test[TARGET], predictions, scores, 0.0, 0.0))
             record["mcnemar_p"] = _mcnemar_pvalue(test[TARGET].to_numpy(), baseline_predictions, predictions)
             record["delong_p"] = _delong_pvalue(test[TARGET].to_numpy(), baseline_scores, scores)
         except Exception as error:  # noqa: BLE001
-            record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+            record.update({"status": "failed", "error": failure_reason(error)})
         _append_extension(record)
         finished.add(run_key)
 

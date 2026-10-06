@@ -22,7 +22,6 @@ from scripts.run_experiments import (
     RESULTS,
     SEED,
     TARGET,
-    experiment_timeout,
     fit_parsel,
     group_ids,
     make_model,
@@ -32,9 +31,30 @@ from scripts.run_experiments import (
     now_utc,
     transform_pair,
 )
+from scripts.hard_timeout import failure_reason, run_with_hard_timeout
 
 EXTENSION_RESULTS = RESULTS / "extension_results.csv"
 ALT_MODELS = ["PaRSEL", "PAC", "Ridge", "SGD", "XGBoost", "LogisticRegression"]
+
+
+def _fit_e1_model(train: pd.DataFrame, evaluation: pd.DataFrame, model_name: str):
+    if model_name == "PaRSEL":
+        return fit_parsel(train, evaluation, "none", "ROS", False)[:4]
+    scale = model_name != "XGBoost"
+    x_fit, x_eval, _, _ = transform_pair(train, evaluation, "none", scale=scale)
+    x_balanced, y_balanced = make_sampler("ROS").fit_resample(x_fit, train[TARGET])
+    model = _make_alternative(model_name)
+    started = time.perf_counter()
+    model.fit(x_balanced, y_balanced)
+    fit_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    scores = model_scores(model, x_eval)
+    predictions = model.predict(x_eval)
+    return predictions, scores, fit_seconds, time.perf_counter() - started
+
+
+def _fit_parsel_scores(train: pd.DataFrame, evaluation: pd.DataFrame):
+    return fit_parsel(train, evaluation, "none", "ROS", False)
 
 
 def extension_completed_run_keys() -> set[str]:
@@ -203,31 +223,15 @@ def run_e1() -> None:
                     model=model_name, model_variant="paper_parameters", sampler="ROS",
                 )
                 try:
-                    with experiment_timeout():
-                        if model_name == "PaRSEL":
-                            predictions, scores, fit_seconds, predict_seconds, _, _ = fit_parsel(
-                                fold_train, fold_validation, "none", "ROS", False
-                            )
-                        else:
-                            scale = model_name != "XGBoost"
-                            x_fit, x_valid, _, _ = transform_pair(
-                                fold_train, fold_validation, "none", scale=scale
-                            )
-                            x_balanced, y_balanced = make_sampler("ROS").fit_resample(x_fit, fold_train[TARGET])
-                            model = _make_alternative(model_name)
-                            started = time.perf_counter()
-                            model.fit(x_balanced, y_balanced)
-                            fit_seconds = time.perf_counter() - started
-                            started = time.perf_counter()
-                            scores = model_scores(model, x_valid)
-                            predictions = model.predict(x_valid)
-                            predict_seconds = time.perf_counter() - started
+                    predictions, scores, fit_seconds, predict_seconds = run_with_hard_timeout(
+                        _fit_e1_model, fold_train, fold_validation, model_name, timeout_seconds=600
+                    )
                     values = metrics(fold_validation[TARGET], predictions, scores, fit_seconds, predict_seconds)
                     record.update(values)
                     record["train_seconds"] = fit_seconds
                     record["predict_seconds"] = predict_seconds
                 except Exception as error:  # noqa: BLE001
-                    record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+                    record.update({"status": "failed", "error": failure_reason(error)})
                 _append_extension(record)
                 finished.add(run_key)
 
@@ -273,13 +277,9 @@ def run_e1() -> None:
             continue
         record = _default_record("E1", run_key, record_type="paired_test", model=model_name, model_variant="paper_parameters", sampler="ROS")
         try:
-            with experiment_timeout():
-                scale = model_name != "XGBoost"
-                x_fit, x_test, _, _ = transform_pair(train, test, "none", scale=scale)
-                x_balanced, y_balanced = make_sampler("ROS").fit_resample(x_fit, train[TARGET])
-                model = _make_alternative(model_name)
-                start = time.perf_counter(); model.fit(x_balanced, y_balanced); fit_seconds = time.perf_counter() - start
-                start = time.perf_counter(); alt_scores = model_scores(model, x_test); alt_predictions = model.predict(x_test); predict_seconds = time.perf_counter() - start
+            alt_predictions, alt_scores, fit_seconds, predict_seconds = run_with_hard_timeout(
+                _fit_e1_model, train, test, model_name, timeout_seconds=600
+            )
             record.update(metrics(test[TARGET], alt_predictions, alt_scores, fit_seconds, predict_seconds))
             record["mcnemar_p"] = _mcnemar_pvalue(y_test, baseline_predictions, alt_predictions)
             record["delong_p"] = _delong_pvalue(y_test, baseline_scores, alt_scores)
@@ -287,7 +287,7 @@ def run_e1() -> None:
             record["baseline_pr_auc"] = float(average_precision_score(y_test, baseline_scores))
             record["train_seconds"] = fit_seconds; record["predict_seconds"] = predict_seconds
         except Exception as error:  # noqa: BLE001
-            record.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+            record.update({"status": "failed", "error": failure_reason(error)})
         _append_extension(record)
         finished.add(run_key)
 
@@ -318,8 +318,9 @@ def run_e2() -> None:
     cached_path = RESULTS / "e2_validation_scores.csv"
     finished = extension_completed_run_keys()
     if validation_key not in finished:
-        with experiment_timeout():
-            _, validation_scores, _, _, _, _ = fit_parsel(fit_train, validation, "none", "ROS", False)
+        _, validation_scores, _, _, _, _ = run_with_hard_timeout(
+            _fit_parsel_scores, fit_train, validation, timeout_seconds=600
+        )
         pd.DataFrame({"target": validation[TARGET].to_numpy(), "score": validation_scores}).to_csv(cached_path, index=False)
         _append_extension(_default_record("E2", validation_key, record_type="validation_scores", model="PaRSEL", sampler="ROS", status="ok"))
         finished.add(validation_key)
@@ -332,8 +333,9 @@ def run_e2() -> None:
     test_key = "E2:final_test_scores:PaRSEL:ROS:none"
     cached_test = RESULTS / "e2_test_scores.csv"
     if test_key not in finished:
-        with experiment_timeout():
-            _, test_scores, _, _, _, _ = fit_parsel(train, test, "none", "ROS", False)
+        _, test_scores, _, _, _, _ = run_with_hard_timeout(
+            _fit_parsel_scores, train, test, timeout_seconds=600
+        )
         pd.DataFrame({"target": test[TARGET].to_numpy(), "score": test_scores}).to_csv(cached_test, index=False)
         _append_extension(_default_record("E2", test_key, record_type="fixed_test_scores", model="PaRSEL", sampler="ROS", status="ok"))
         finished.add(test_key)
